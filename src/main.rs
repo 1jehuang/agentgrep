@@ -1,33 +1,43 @@
 use agentgrep::cli::{Cli, Command};
+use agentgrep::search::run_grep;
 use agentgrep::smart_dsl::parse_smart_query;
 use clap::Parser;
+use std::env;
 
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
         Command::Grep(args) => {
-            if args.json {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "mode": "grep",
-                        "query": args.query,
-                        "regex": args.regex,
-                        "type": args.file_type,
-                        "hidden": args.hidden,
-                        "no_ignore": args.no_ignore,
-                        "status": "not_implemented"
-                    })
-                );
-            } else {
-                println!("agentgrep grep scaffold");
-                println!("  query: {}", args.query);
-                println!("  regex: {}", args.regex);
-                if let Some(file_type) = args.file_type {
-                    println!("  type: {file_type}");
+            let root = env::current_dir().expect("current directory");
+            match run_grep(&root, &args) {
+                Ok(result) => {
+                    if args.json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).expect("serialize grep json")
+                        );
+                    } else {
+                        println!("query: {}", result.query);
+                        println!(
+                            "matches: {} in {} files",
+                            result.total_matches, result.total_files
+                        );
+                        for file in result.files {
+                            println!();
+                            println!("{}", file.path);
+                            println!("  matches:");
+                            for line_match in file.matches {
+                                println!("    - @ {}", line_match.line_number);
+                                println!("      {}", line_match.line_text);
+                            }
+                        }
+                    }
                 }
-                println!("  status: not implemented yet");
+                Err(err) => {
+                    eprintln!("error: {err}");
+                    std::process::exit(2);
+                }
             }
         }
         Command::Find(args) => {
