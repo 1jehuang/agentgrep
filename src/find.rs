@@ -114,10 +114,12 @@ fn score_file(
             structure_hits += 1;
         }
     }
-    if structure_hits > 0 {
-        score += (structure_hits as i32) * 15;
+    let has_path_evidence = evidence_hits > 0;
+    if structure_hits > 0 && has_path_evidence {
+        let capped = structure_hits.min(4);
+        score += (capped as i32) * 8;
         why.push(format!("symbol/outline hits: {structure_hits}"));
-        evidence_hits += structure_hits;
+        evidence_hits += capped;
     }
 
     let text_lower = text.to_ascii_lowercase();
@@ -125,7 +127,7 @@ fn score_file(
         .iter()
         .filter(|token| text_lower.contains(token.as_str()))
         .count();
-    if text_hits > 0 && evidence_hits > 0 {
+    if text_hits > 0 && has_path_evidence {
         score += (text_hits as i32) * 4;
         why.push(format!("supporting text hits: {text_hits}"));
     }
