@@ -22,6 +22,7 @@ agentgrep is designed to combine:
 - `rg`-like trust and exactness in `grep`
 - strong file discovery in `find`
 - relation-aware, structure-aware investigation in `smart`
+- scriptable output modes for agents and automation
 
 without requiring:
 
@@ -79,6 +80,7 @@ agentgrep smart subject:<value> relation:<value> [support:<value> ...] [kind:<va
 - exact search is sacred
 - smartness is layered
 - results should minimize follow-up reads
+- structured and scriptable outputs matter
 - cache is optional
 - semantic search, if ever added, is a sidecar rather than the foundation
 - one-shot CLI behavior is the default model

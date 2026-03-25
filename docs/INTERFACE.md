@@ -86,6 +86,7 @@ agentgrep smart subject:lsp relation:implementation
 --json
 --no-color
 --paths-only
+--debug-score
 ```
 
 ### Scope

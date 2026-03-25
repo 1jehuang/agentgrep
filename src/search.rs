@@ -225,4 +225,20 @@ mod tests {
         assert_eq!(result.total_files, 1);
         assert_eq!(result.files[0].path, "a.rs");
     }
+
+    #[test]
+    fn glob_filter_works() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src/tool")).unwrap();
+        fs::create_dir_all(dir.path().join("src/other")).unwrap();
+        fs::write(dir.path().join("src/tool/a.rs"), "auth_status\n").unwrap();
+        fs::write(dir.path().join("src/other/b.rs"), "auth_status\n").unwrap();
+
+        let mut args = grep_args("auth_status");
+        args.glob = Some("src/tool/*".to_string());
+
+        let result = run_grep(dir.path(), &args).unwrap();
+        assert_eq!(result.total_files, 1);
+        assert_eq!(result.files[0].path, "src/tool/a.rs");
+    }
 }

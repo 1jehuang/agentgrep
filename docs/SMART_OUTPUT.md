@@ -8,6 +8,10 @@ The central principle is:
 
 > return the smallest useful context packet that helps the agent stop searching and move to understanding or editing.
 
+Secondary principle:
+
+> when requested, return less structure and more scriptable output instead of richer explanation.
+
 ## Core output philosophy
 
 agentgrep should optimize:
@@ -25,6 +29,12 @@ That means results should be:
 - adaptive in how much code/context they inline
 
 ## Default return shape by mode
+
+All three modes should also support:
+
+- `--json` for structured machine-readable output
+- `--paths-only` for file-only output
+- `--debug-score` where ranking transparency matters
 
 ## 1. `grep`
 Default unit:
