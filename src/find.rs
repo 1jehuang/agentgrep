@@ -229,4 +229,34 @@ mod tests {
         let result = run_find(dir.path(), &args);
         assert!(result.files.iter().all(|f| f.path != "src/app.rs"));
     }
+
+    #[test]
+    fn find_prefers_basename_query_variant_match() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src/tool")).unwrap();
+        fs::create_dir_all(dir.path().join("src/server")).unwrap();
+        fs::write(
+            dir.path().join("src/tool/debug_socket.rs"),
+            "pub struct DebugSocketTool;\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("src/server/debug.rs"),
+            "pub fn socket_path() {}\n",
+        )
+        .unwrap();
+
+        let args = FindArgs {
+            query_parts: vec!["debug".to_string(), "socket".to_string()],
+            file_type: Some("rs".to_string()),
+            json: false,
+            max_files: 10,
+            hidden: false,
+            no_ignore: true,
+            path: None,
+        };
+
+        let result = run_find(dir.path(), &args);
+        assert_eq!(result.files[0].path, "src/tool/debug_socket.rs");
+    }
 }

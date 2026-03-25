@@ -106,6 +106,13 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
         let mut file_score = 0;
         let mut why = vec!["exact subject match or symbol hit".to_string()];
         file_score += (subject_mentions.len() as i32) * 5;
+        if exact_subject_path_match(&relative_lower, &subject_lower) {
+            file_score += match query.relation {
+                Relation::Defined | Relation::Implementation => 140,
+                _ => 60,
+            };
+            why.push("path matches subject variant".to_string());
+        }
         if relation_hits > 0 {
             file_score += (relation_hits as i32) * 20;
             why.push(format!("relation-context hits: {relation_hits}"));
@@ -159,11 +166,19 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
         });
         let best_region_score = regions.first().map(|r| r.score).unwrap_or(0);
         if let Some(best_region) = regions.first() {
-            if best_region.why.iter().any(|reason| reason == "test/example penalty") {
+            if best_region
+                .why
+                .iter()
+                .any(|reason| reason == "test/example penalty")
+            {
                 file_score -= 40;
                 why.push("best region is test/example-like".to_string());
             }
-            if best_region.why.iter().any(|reason| reason == "cli/example penalty") {
+            if best_region
+                .why
+                .iter()
+                .any(|reason| reason == "cli/example penalty")
+            {
                 file_score -= 50;
                 why.push("best region is cli/example-like".to_string());
             }
@@ -252,7 +267,15 @@ fn build_regions(
             why.push("relation-context aligned".to_string());
         }
 
-        let kind = classify_region(item, relation);
+        let exact_label_match = exact_subject_label_match(&item.label, subject_lower);
+        let kind = classify_region(item, relation, exact_label_match);
+        if exact_label_match {
+            score += match relation {
+                Relation::Defined | Relation::Implementation => 120,
+                _ => 50,
+            };
+            why.push("exact subject label match".to_string());
+        }
         match kind.as_str() {
             "render-site" | "definition" | "handler" | "assignment" => score += 20,
             _ => {}
@@ -297,16 +320,34 @@ fn build_regions(
     regions
 }
 
-fn classify_region(item: &StructureItem, relation: &Relation) -> String {
+fn classify_region(item: &StructureItem, relation: &Relation, exact_label_match: bool) -> String {
     match relation {
         Relation::Rendered => "render-site".to_string(),
         Relation::Handled => "handler".to_string(),
         Relation::Populated => "assignment".to_string(),
         Relation::CalledFrom => "callsite".to_string(),
-        Relation::Defined => "definition".to_string(),
+        Relation::Defined | Relation::Implementation => {
+            if exact_label_match {
+                "definition".to_string()
+            } else {
+                "reference".to_string()
+            }
+        }
         _ if item.kind == "function" => "reference".to_string(),
         _ => item.kind.clone(),
     }
+}
+
+fn exact_subject_path_match(relative_lower: &str, subject_lower: &str) -> bool {
+    relative_lower.contains(&subject_lower.replace(' ', "_"))
+        || relative_lower.contains(&subject_lower.replace(' ', "-"))
+}
+
+fn exact_subject_label_match(label: &str, subject_lower: &str) -> bool {
+    let label_lower = label.to_ascii_lowercase();
+    label_lower == subject_lower
+        || label_lower == subject_lower.replace(' ', "_")
+        || label_lower == subject_lower.replace(' ', "-")
 }
 
 fn relation_terms(relation: &Relation) -> Vec<String> {
