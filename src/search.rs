@@ -174,6 +174,7 @@ mod tests {
             regex: false,
             file_type: None,
             json: false,
+            paths_only: false,
             hidden: false,
             no_ignore: false,
             path: None,

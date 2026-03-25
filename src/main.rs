@@ -26,6 +26,10 @@ fn main() {
                             "{}",
                             serde_json::to_string_pretty(&result).expect("serialize grep json")
                         );
+                    } else if args.paths_only {
+                        for file in result.files {
+                            println!("{}", file.path);
+                        }
                     } else {
                         println!("query: {}", result.query);
                         println!(
@@ -57,6 +61,10 @@ fn main() {
                     "{}",
                     serde_json::to_string_pretty(&result).expect("serialize find json")
                 );
+            } else if args.paths_only {
+                for file in result.files {
+                    println!("{}", file.path);
+                }
             } else {
                 println!("query: {}", result.query);
                 println!("top files: {}", result.files.len());
@@ -67,6 +75,9 @@ fn main() {
                     println!("   why:");
                     for reason in &file.why {
                         println!("     - {reason}");
+                    }
+                    if args.debug_score {
+                        println!("   score: {}", file.score);
                     }
                     println!("   structure:");
                     for item in &file.structure.items {
@@ -90,6 +101,10 @@ fn main() {
                         "{}",
                         serde_json::to_string_pretty(&result).expect("serialize smart json")
                     );
+                } else if args.paths_only {
+                    for file in result.files {
+                        println!("{}", file.path);
+                    }
                 } else {
                     if args.debug_plan {
                         let relation_terms = match result.query.relation.as_str() {
@@ -136,6 +151,9 @@ fn main() {
                         "top results: {} files, {} regions",
                         result.summary.total_files, result.summary.total_regions
                     );
+                    if result.files.is_empty() {
+                        println!("no results found for the current smart query and scope");
+                    }
                     if let Some(best_file) = &result.summary.best_file {
                         println!("best answer likely in {best_file}");
                     }
@@ -146,6 +164,9 @@ fn main() {
                         println!("   why:");
                         for reason in &file.why {
                             println!("     - {reason}");
+                        }
+                        if args.debug_score {
+                            println!("   score: {}", file.score);
                         }
                         println!("   structure:");
                         for item in &file.structure.items {
@@ -168,6 +189,9 @@ fn main() {
                                 region.label, region.start_line, region.end_line, region.line_count
                             );
                             println!("       kind: {}", region.kind);
+                            if args.debug_score {
+                                println!("       score: {}", region.score);
+                            }
                             if region.full_region {
                                 println!("       full region:");
                             } else {

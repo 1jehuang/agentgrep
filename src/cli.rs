@@ -38,6 +38,10 @@ pub struct GrepArgs {
     #[arg(long)]
     pub json: bool,
 
+    /// Print only matching file paths.
+    #[arg(long)]
+    pub paths_only: bool,
+
     /// Include hidden files.
     #[arg(long)]
     pub hidden: bool,
@@ -68,6 +72,14 @@ pub struct FindArgs {
     /// Emit JSON output.
     #[arg(long)]
     pub json: bool,
+
+    /// Print only matching file paths.
+    #[arg(long)]
+    pub paths_only: bool,
+
+    /// Print score information in human-readable output.
+    #[arg(long = "debug-score", action = ArgAction::SetTrue)]
+    pub debug_score: bool,
 
     /// Max files to return.
     #[arg(long, default_value_t = 10)]
@@ -115,6 +127,14 @@ pub struct SmartArgs {
     /// Print parser/planner details.
     #[arg(long = "debug-plan", action = ArgAction::SetTrue)]
     pub debug_plan: bool,
+
+    /// Print score information in human-readable output.
+    #[arg(long = "debug-score", action = ArgAction::SetTrue)]
+    pub debug_score: bool,
+
+    /// Print only matching file paths.
+    #[arg(long)]
+    pub paths_only: bool,
 
     /// Optional root path to search instead of the current directory.
     #[arg(long)]
