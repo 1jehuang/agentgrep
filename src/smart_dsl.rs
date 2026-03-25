@@ -227,6 +227,7 @@ mod tests {
     }
 
     #[test]
+    fn rejects_missing_subject() {
         let err = parse_smart_query(["relation:rendered"]).unwrap_err();
         assert_eq!(err, ParseError::MissingSubject);
     }

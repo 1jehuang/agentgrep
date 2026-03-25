@@ -91,6 +91,34 @@ fn main() {
                         serde_json::to_string_pretty(&result).expect("serialize smart json")
                     );
                 } else {
+                    if args.debug_plan {
+                        let relation_terms = match result.query.relation.as_str() {
+                            "rendered" => "render, draw, ui, widget, view",
+                            "called_from" => "call, invoke, dispatch",
+                            "triggered_from" => "trigger, dispatch, schedule",
+                            "populated" => "set, assign, insert, push, build",
+                            "comes_from" => "source, load, parse, read, fetch",
+                            "handled" => "handle, handler, event, dispatch",
+                            "defined" => "fn, struct, enum, class, def",
+                            "implementation" => "impl, register, wire, tool",
+                            other => other,
+                        };
+                        println!("debug plan:");
+                        println!("  mode: smart");
+                        println!("  subject: {}", result.query.subject);
+                        println!("  relation: {}", result.query.relation.as_str());
+                        println!("  relation_terms: {relation_terms}");
+                        if let Some(kind) = &result.query.kind {
+                            println!("  kind filter: {kind}");
+                        }
+                        if let Some(path_hint) = &result.query.path_hint {
+                            println!("  path hint: {path_hint}");
+                        }
+                        if !result.query.support.is_empty() {
+                            println!("  support terms: {}", result.query.support.join(", "));
+                        }
+                        println!();
+                    }
                     println!("query parameters:");
                     println!("  subject: {}", result.query.subject);
                     println!("  relation: {}", result.query.relation.as_str());

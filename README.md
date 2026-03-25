@@ -69,9 +69,9 @@ For reliability, `smart` is expected to use a small structured DSL rather than f
 ## Planned commands
 
 ```bash
-agentgrep grep <query>
-agentgrep find <query>
-agentgrep smart <query>
+agentgrep grep <query> [--path <root>]
+agentgrep find <query parts...> [--path <root>]
+agentgrep smart subject:<value> relation:<value> [support:<value> ...] [kind:<value>] [path:<hint>] [--path <root>]
 ```
 
 ## Principles

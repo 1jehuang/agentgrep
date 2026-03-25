@@ -125,10 +125,9 @@ fn score_file(
         .iter()
         .filter(|token| text_lower.contains(token.as_str()))
         .count();
-    if text_hits > 0 {
-        score += (text_hits as i32) * 8;
-        why.push(format!("text hits: {text_hits}"));
-        evidence_hits += text_hits;
+    if text_hits > 0 && evidence_hits > 0 {
+        score += (text_hits as i32) * 4;
+        why.push(format!("supporting text hits: {text_hits}"));
     }
 
     if query_tokens
@@ -141,8 +140,10 @@ fn score_file(
 
     match structure.role.as_str() {
         "implementation" | "auth" | "provider" | "ui" | "handler" => {
-            score += 20;
-            why.push(format!("code role boost: {}", structure.role));
+            if evidence_hits > 0 {
+                score += 20;
+                why.push(format!("code role boost: {}", structure.role));
+            }
         }
         "docs" => {
             score -= 25;
@@ -206,5 +207,26 @@ mod tests {
         let result = run_find(dir.path(), &args);
         assert!(!result.files.is_empty());
         assert_eq!(result.files[0].path, "src/auth/mod.rs");
+    }
+
+    #[test]
+    fn find_does_not_surface_irrelevant_files_from_role_boost_alone() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/app.rs"), "fn main() {}\n").unwrap();
+        fs::write(dir.path().join("README.md"), "auth status docs\n").unwrap();
+
+        let args = FindArgs {
+            query_parts: vec!["auth".to_string(), "status".to_string()],
+            file_type: None,
+            json: false,
+            max_files: 10,
+            hidden: false,
+            no_ignore: true,
+            path: None,
+        };
+
+        let result = run_find(dir.path(), &args);
+        assert!(result.files.iter().all(|f| f.path != "src/app.rs"));
     }
 }

@@ -91,15 +91,16 @@ top files: 5
 ## 3. `smart`
 Default unit:
 
-> ranked file -> compact structure -> ranked relevant regions
+> ranked file -> usable follow-up outline -> ranked relevant regions
 
 Recommended default text shape:
 
 ```text
-query: where is auth_status rendered
-interpreted as:
+query parameters:
   subject: auth_status
   relation: rendered
+  support: ui
+  kind: code
 
 top results: 3 files, 4 regions
 best answer likely in src/tui/app.rs
@@ -107,32 +108,42 @@ best answer likely in src/tui/app.rs
 1. src/tui/app.rs
    role: ui/app
    structure:
-     - impl App
-     - fn render_status_bar
-     - fn draw_header
-     ... 12 more symbols
+     - impl App @ 8700-9450
+     - fn render_status_bar @ 9002-9017 (16 lines)
+     - fn draw_header @ 9035-9056 (22 lines)
+     - fn build_auth_panel @ 9058-9104 (47 lines)
+     - fn render_footer @ 9108-9130 (23 lines)
+     - fn auth_status @ 9132-9140 (9 lines)
+     ... 6 more symbols
    regions:
-     - render_status_bar @ 9005-9017 (13 lines)
-       kind: render-site call
-       snippet:
-         let status = auth_status();
+     - fn render_status_bar @ 9002-9017 (16 lines)
+       kind: render-site
+       full region:
+         fn render_status_bar(&self, ui: &mut Ui) {
+             let status = auth_status();
+             ui.label(status.to_string());
+             if self.show_details {
+                 ui.label(self.auth_message());
+             }
+         }
        why:
          - exact subject match
-         - inside render-like function
-         - ui/app file
+         - relation-context aligned
 
 2. src/auth/mod.rs
    role: auth/core
    structure:
-     - pub fn auth_status
-     ... 5 more symbols
+     - enum AuthStatus @ 180-210 (31 lines)
+     - pub fn auth_status @ 218-246 (29 lines)
+     - fn authenticate @ 248-310 (63 lines)
+     ... 4 more symbols
    regions:
-     - auth_status @ 218-246 (29 lines)
+     - pub fn auth_status @ 218-246 (29 lines)
        kind: definition
        snippet:
          pub fn auth_status() -> AuthStatus
        why:
-         - likely definition of subject
+         - exact subject match
 ```
 
 ## Required fields in a result packet

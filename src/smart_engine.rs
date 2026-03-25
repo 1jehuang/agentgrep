@@ -103,7 +103,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
             .filter(|term| file.text.to_ascii_lowercase().contains(term.as_str()))
             .count();
 
-        let mut file_score = 100;
+        let mut file_score = 0;
         let mut why = vec!["exact subject match or symbol hit".to_string()];
         file_score += (subject_mentions.len() as i32) * 5;
         if relation_hits > 0 {
@@ -157,6 +157,9 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
                 .cmp(&a.score)
                 .then_with(|| a.start_line.cmp(&b.start_line))
         });
+        let best_region_score = regions.first().map(|r| r.score).unwrap_or(0);
+        file_score += best_region_score / 2;
+        why.push(format!("best region score: {best_region_score}"));
         regions.truncate(args.max_regions);
 
         let shown_items = select_structure_items(&structure.items, &regions, 10);
@@ -243,6 +246,16 @@ fn build_regions(
         match kind.as_str() {
             "render-site" | "definition" | "handler" | "assignment" => score += 20,
             _ => {}
+        }
+
+        let region_text = region_lines.join("\n");
+        if is_test_like(item, &region_text) {
+            score -= 60;
+            why.push("test/example penalty".to_string());
+        }
+        if looks_like_string_fixture(region_lines[subject_line_hits[0]]) {
+            score -= 25;
+            why.push("string-literal penalty".to_string());
         }
 
         let first_match_idx = subject_line_hits[0];
@@ -375,6 +388,23 @@ fn should_include_full_region(item: &StructureItem, mode: FullRegionMode) -> boo
 
 fn extract_region(lines: &[&str], start_line: usize, end_line: usize) -> String {
     lines[start_line.saturating_sub(1)..end_line.min(lines.len())].join("\n")
+}
+
+fn is_test_like(item: &StructureItem, region_text: &str) -> bool {
+    let label = item.label.to_ascii_lowercase();
+    label.contains("test")
+        || region_text.contains("#[test]")
+        || region_text.contains("assert_eq!")
+        || region_text.contains("unwrap_err()")
+}
+
+fn looks_like_string_fixture(line: &str) -> bool {
+    let trimmed = line.trim();
+    let quote_count = trimmed.matches('"').count();
+    quote_count >= 2
+        && (trimmed.contains("\\n")
+            || trimmed.contains("subject:")
+            || trimmed.contains("relation:"))
 }
 
 #[cfg(test)]
