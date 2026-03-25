@@ -163,6 +163,7 @@ mod tests {
             json: false,
             hidden: false,
             no_ignore: false,
+            path: None,
         }
     }
 

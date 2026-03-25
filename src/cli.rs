@@ -45,6 +45,10 @@ pub struct GrepArgs {
     /// Ignore .gitignore and related ignore files.
     #[arg(long = "no-ignore")]
     pub no_ignore: bool,
+
+    /// Optional root path to search instead of the current directory.
+    #[arg(long)]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -72,6 +76,10 @@ pub struct FindArgs {
     /// Ignore .gitignore and related ignore files.
     #[arg(long = "no-ignore")]
     pub no_ignore: bool,
+
+    /// Optional root path to search instead of the current directory.
+    #[arg(long)]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -99,6 +107,10 @@ pub struct SmartArgs {
     /// Print parser/planner details.
     #[arg(long = "debug-plan", action = ArgAction::SetTrue)]
     pub debug_plan: bool,
+
+    /// Optional root path to search instead of the current directory.
+    #[arg(long)]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
