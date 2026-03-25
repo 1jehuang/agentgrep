@@ -255,13 +255,18 @@ fn build_regions(
             .enumerate()
             .filter_map(|(idx, line)| line.contains(subject_lower).then_some(idx))
             .collect::<Vec<_>>();
-        if subject_line_hits.is_empty() {
+        let item_label_lower = item.label.to_ascii_lowercase();
+        let exact_label_match = exact_subject_label_match(&item.label, subject_lower);
+        let token_label_match = subject_tokens_match_label(&item.label, subject_tokens);
+        if subject_line_hits.is_empty() && !exact_label_match && !token_label_match {
             continue;
         }
 
         let mut score = 80 + (subject_line_hits.len() as i32 * 10);
-        let mut why = vec!["exact subject match".to_string()];
-        let item_label_lower = item.label.to_ascii_lowercase();
+        let mut why = Vec::new();
+        if !subject_line_hits.is_empty() {
+            why.push("exact subject match".to_string());
+        }
         let relation_hit = relation_terms.iter().any(|term| {
             item_label_lower.contains(term.as_str())
                 || region_lower.iter().any(|line| line.contains(term.as_str()))
@@ -271,9 +276,8 @@ fn build_regions(
             why.push("relation-context aligned".to_string());
         }
 
-        let exact_label_match = exact_subject_label_match(&item.label, subject_lower);
-        let token_label_match = subject_tokens_match_label(&item.label, subject_tokens);
-        let kind = classify_region(item, relation, exact_label_match);
+        let owner_match = exact_label_match || token_label_match;
+        let kind = classify_region(item, relation, owner_match);
         if exact_label_match {
             score += match relation {
                 Relation::Defined | Relation::Implementation => 120,
@@ -300,17 +304,25 @@ fn build_regions(
             score -= 60;
             why.push("test/example penalty".to_string());
         }
-        if looks_like_string_fixture(region_lines[subject_line_hits[0]]) {
+        let representative_line = if let Some(first_match_idx) = subject_line_hits.first() {
+            region_lines[*first_match_idx]
+        } else {
+            region_lines[0]
+        };
+        if looks_like_string_fixture(representative_line) {
             score -= 25;
             why.push("string-literal penalty".to_string());
         }
-        if looks_like_cli_or_example_line(region_lines[subject_line_hits[0]]) {
+        if looks_like_cli_or_example_line(representative_line) {
             score -= 60;
             why.push("cli/example penalty".to_string());
         }
 
-        let first_match_idx = subject_line_hits[0];
-        let match_line_number = item.start_line + first_match_idx;
+        let match_line_number = if let Some(first_match_idx) = subject_line_hits.first() {
+            item.start_line + *first_match_idx
+        } else {
+            item.start_line
+        };
         let full_region = should_include_full_region(item, args.full_region);
         let body = if full_region {
             extract_region(lines.as_slice(), item.start_line, item.end_line)
