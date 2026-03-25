@@ -294,12 +294,27 @@ fn build_regions(
             score -= 50;
             why.push("non-owner penalty".to_string());
         }
+        let region_text = region_lines.join("\n");
+        if owner_match && matches!(relation, Relation::Defined | Relation::Implementation) {
+            if region_text.trim_start().starts_with("pub ") {
+                score += 20;
+                why.push("public owner bonus".to_string());
+            }
+            let normalized_label = normalize_match_text(&item.label);
+            if normalized_label.ends_with("tool") {
+                score += 15;
+                why.push("tool suffix bonus".to_string());
+            }
+            if normalized_label.ends_with("input") || normalized_label.ends_with("output") {
+                score -= 10;
+                why.push("auxiliary suffix penalty".to_string());
+            }
+        }
         match kind.as_str() {
             "render-site" | "definition" | "handler" | "assignment" => score += 20,
             _ => {}
         }
 
-        let region_text = region_lines.join("\n");
         if is_test_like(item, &region_text) {
             score -= 60;
             why.push("test/example penalty".to_string());
