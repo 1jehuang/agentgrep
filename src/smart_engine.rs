@@ -138,7 +138,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
                 file_score += 30;
                 why.push(format!("path hint matched: {path_hint}"));
             } else {
-                file_score -= 10;
+                continue;
             }
         }
 
@@ -158,6 +158,16 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
                 .then_with(|| a.start_line.cmp(&b.start_line))
         });
         let best_region_score = regions.first().map(|r| r.score).unwrap_or(0);
+        if let Some(best_region) = regions.first() {
+            if best_region.why.iter().any(|reason| reason == "test/example penalty") {
+                file_score -= 40;
+                why.push("best region is test/example-like".to_string());
+            }
+            if best_region.why.iter().any(|reason| reason == "cli/example penalty") {
+                file_score -= 50;
+                why.push("best region is cli/example-like".to_string());
+            }
+        }
         file_score += best_region_score / 2;
         why.push(format!("best region score: {best_region_score}"));
         regions.truncate(args.max_regions);
@@ -256,6 +266,10 @@ fn build_regions(
         if looks_like_string_fixture(region_lines[subject_line_hits[0]]) {
             score -= 25;
             why.push("string-literal penalty".to_string());
+        }
+        if looks_like_cli_or_example_line(region_lines[subject_line_hits[0]]) {
+            score -= 60;
+            why.push("cli/example penalty".to_string());
         }
 
         let first_match_idx = subject_line_hits[0];
@@ -407,6 +421,15 @@ fn looks_like_string_fixture(line: &str) -> bool {
             || trimmed.contains("relation:"))
 }
 
+fn looks_like_cli_or_example_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.contains("agentgrep ")
+        || trimmed.contains("cargo run --")
+        || trimmed.contains("subject:")
+        || trimmed.contains("relation:")
+        || trimmed.contains("support:")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,5 +487,117 @@ mod tests {
                 .iter()
                 .all(|file| file.path != "docs/notes.md" || file.score < result.files[0].score)
         );
+    }
+
+    #[test]
+    fn smart_kind_code_filters_out_docs() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src/tui")).unwrap();
+        fs::create_dir_all(dir.path().join("docs")).unwrap();
+        fs::write(
+            dir.path().join("src/tui/app.rs"),
+            "fn render_status_bar() {\n    let status = auth_status();\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("docs/notes.md"),
+            "where is auth_status rendered\nsubject:auth_status relation:rendered\n",
+        )
+        .unwrap();
+
+        let query = SmartQuery {
+            subject: "auth_status".to_string(),
+            relation: Relation::Rendered,
+            support: vec![],
+            kind: Some("code".to_string()),
+            path_hint: None,
+        };
+        let args = SmartArgs {
+            terms: vec![],
+            json: false,
+            max_files: 5,
+            max_regions: 5,
+            full_region: FullRegionMode::Auto,
+            debug_plan: false,
+            path: None,
+        };
+
+        let result = run_smart(dir.path(), &query, &args);
+        assert!(result.files.iter().all(|f| !f.path.ends_with(".md")));
+    }
+
+    #[test]
+    fn smart_path_hint_biases_subtree() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src/tui")).unwrap();
+        fs::create_dir_all(dir.path().join("src/other")).unwrap();
+        fs::write(
+            dir.path().join("src/tui/app.rs"),
+            "fn render_status_bar() {\n    let status = auth_status();\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("src/other/app.rs"),
+            "fn render_status_bar() {\n    let status = auth_status();\n}\n",
+        )
+        .unwrap();
+
+        let query = SmartQuery {
+            subject: "auth_status".to_string(),
+            relation: Relation::Rendered,
+            support: vec![],
+            kind: Some("code".to_string()),
+            path_hint: Some("src/tui".to_string()),
+        };
+        let args = SmartArgs {
+            terms: vec![],
+            json: false,
+            max_files: 5,
+            max_regions: 5,
+            full_region: FullRegionMode::Auto,
+            debug_plan: false,
+            path: None,
+        };
+
+        let result = run_smart(dir.path(), &query, &args);
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].path, "src/tui/app.rs");
+    }
+
+    #[test]
+    fn smart_penalizes_cli_example_files() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src/tui")).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(
+            dir.path().join("src/tui/app.rs"),
+            "fn render_status_bar() {\n    let status = auth_status();\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("src/main.rs"),
+            "fn main() {\n    eprintln!(\"agentgrep smart subject:auth_status relation:rendered support:ui\");\n}\n",
+        )
+        .unwrap();
+
+        let query = SmartQuery {
+            subject: "auth_status".to_string(),
+            relation: Relation::Rendered,
+            support: vec!["ui".to_string()],
+            kind: Some("code".to_string()),
+            path_hint: None,
+        };
+        let args = SmartArgs {
+            terms: vec![],
+            json: false,
+            max_files: 5,
+            max_regions: 5,
+            full_region: FullRegionMode::Auto,
+            debug_plan: false,
+            path: None,
+        };
+
+        let result = run_smart(dir.path(), &query, &args);
+        assert_eq!(result.files[0].path, "src/tui/app.rs");
     }
 }
