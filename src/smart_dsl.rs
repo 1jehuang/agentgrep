@@ -201,7 +201,32 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_subject() {
+    fn parses_kind_and_path_hint() {
+        let query = parse_smart_query([
+            "subject:auth_status",
+            "relation:rendered",
+            "kind:code",
+            "path:src/tui",
+        ])
+        .unwrap();
+
+        assert_eq!(query.kind.as_deref(), Some("code"));
+        assert_eq!(query.path_hint.as_deref(), Some("src/tui"));
+    }
+
+    #[test]
+    fn rejects_duplicate_kind() {
+        let err = parse_smart_query([
+            "subject:auth_status",
+            "relation:rendered",
+            "kind:code",
+            "kind:docs",
+        ])
+        .unwrap_err();
+        assert_eq!(err, ParseError::DuplicateKey("kind"));
+    }
+
+    #[test]
         let err = parse_smart_query(["relation:rendered"]).unwrap_err();
         assert_eq!(err, ParseError::MissingSubject);
     }

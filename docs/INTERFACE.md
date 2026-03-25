@@ -95,6 +95,7 @@ agentgrep smart subject:lsp relation:implementation
 --glob <glob>
 --hidden
 --no-ignore
+--path <root>
 ```
 
 ### Result budgeting

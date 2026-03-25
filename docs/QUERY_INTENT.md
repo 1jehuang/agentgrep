@@ -191,6 +191,11 @@ Optional keys:
 - `kind`
 - `path`
 
+Recommended values:
+- `kind:code` to suppress docs-oriented results
+- `kind:docs` to focus on docs
+- `path:src/tui` to bias toward a subtree
+
 ## Processing model without embeddings
 
 For a query like:
