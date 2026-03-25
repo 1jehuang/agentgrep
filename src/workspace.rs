@@ -1,3 +1,4 @@
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,6 +7,7 @@ use std::path::{Path, PathBuf};
 pub struct SearchScope<'a> {
     pub root: &'a Path,
     pub file_type: Option<&'a str>,
+    pub glob: Option<&'a str>,
     pub hidden: bool,
     pub no_ignore: bool,
 }
@@ -28,6 +30,7 @@ pub fn collect_text_files(scope: &SearchScope<'_>) -> Vec<TextFile> {
     }
 
     let file_type = scope.file_type.map(normalize_file_type);
+    let glob = scope.glob.and_then(build_glob);
     let mut files = Vec::new();
 
     for entry in builder.build() {
@@ -43,6 +46,12 @@ pub fn collect_text_files(scope: &SearchScope<'_>) -> Vec<TextFile> {
         {
             continue;
         }
+        let relative_path = normalize_display_path(scope.root, path);
+        if let Some(glob) = &glob
+            && !glob.is_match(&relative_path)
+        {
+            continue;
+        }
 
         let Ok(bytes) = fs::read(path) else {
             continue;
@@ -54,12 +63,18 @@ pub fn collect_text_files(scope: &SearchScope<'_>) -> Vec<TextFile> {
         let text = String::from_utf8_lossy(&bytes).into_owned();
         files.push(TextFile {
             path: path.to_path_buf(),
-            relative_path: normalize_display_path(scope.root, path),
+            relative_path,
             text,
         });
     }
 
     files
+}
+
+fn build_glob(glob: &str) -> Option<GlobSet> {
+    let mut builder = GlobSetBuilder::new();
+    builder.add(Glob::new(glob).ok()?);
+    builder.build().ok()
 }
 
 pub fn normalize_file_type(file_type: &str) -> String {

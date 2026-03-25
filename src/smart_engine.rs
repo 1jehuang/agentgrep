@@ -53,9 +53,10 @@ pub struct SmartRegion {
 pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResult {
     let scope = SearchScope {
         root,
-        file_type: None,
-        hidden: false,
-        no_ignore: false,
+        file_type: args.file_type.as_deref(),
+        glob: args.glob.as_deref(),
+        hidden: args.hidden,
+        no_ignore: args.no_ignore,
     };
 
     let relation_terms = relation_terms(&query.relation);
@@ -515,6 +516,10 @@ mod tests {
             full_region: FullRegionMode::Auto,
             debug_plan: false,
             path: None,
+            file_type: None,
+            glob: None,
+            hidden: false,
+            no_ignore: false,
         };
 
         let result = run_smart(dir.path(), &query, &args);
@@ -561,6 +566,10 @@ mod tests {
             full_region: FullRegionMode::Auto,
             debug_plan: false,
             path: None,
+            file_type: None,
+            glob: None,
+            hidden: false,
+            no_ignore: false,
         };
 
         let result = run_smart(dir.path(), &query, &args);
@@ -598,6 +607,10 @@ mod tests {
             full_region: FullRegionMode::Auto,
             debug_plan: false,
             path: None,
+            file_type: None,
+            glob: None,
+            hidden: false,
+            no_ignore: false,
         };
 
         let result = run_smart(dir.path(), &query, &args);
@@ -636,6 +649,10 @@ mod tests {
             full_region: FullRegionMode::Auto,
             debug_plan: false,
             path: None,
+            file_type: None,
+            glob: None,
+            hidden: false,
+            no_ignore: false,
         };
 
         let result = run_smart(dir.path(), &query, &args);

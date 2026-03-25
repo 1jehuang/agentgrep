@@ -49,6 +49,10 @@ pub struct GrepArgs {
     /// Optional root path to search instead of the current directory.
     #[arg(long)]
     pub path: Option<String>,
+
+    /// Restrict candidate files by glob.
+    #[arg(long)]
+    pub glob: Option<String>,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -80,6 +84,10 @@ pub struct FindArgs {
     /// Optional root path to search instead of the current directory.
     #[arg(long)]
     pub path: Option<String>,
+
+    /// Restrict candidate files by glob.
+    #[arg(long)]
+    pub glob: Option<String>,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -111,6 +119,22 @@ pub struct SmartArgs {
     /// Optional root path to search instead of the current directory.
     #[arg(long)]
     pub path: Option<String>,
+
+    /// Restrict to a known file type.
+    #[arg(long = "type")]
+    pub file_type: Option<String>,
+
+    /// Restrict candidate files by glob.
+    #[arg(long)]
+    pub glob: Option<String>,
+
+    /// Include hidden files.
+    #[arg(long)]
+    pub hidden: bool,
+
+    /// Ignore .gitignore and related ignore files.
+    #[arg(long = "no-ignore")]
+    pub no_ignore: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

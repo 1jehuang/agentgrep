@@ -85,6 +85,7 @@ fn collect_files(root: &Path, args: &GrepArgs) -> Vec<PathBuf> {
     }
 
     let file_type = args.file_type.as_deref().map(normalize_file_type);
+    let glob = args.glob.as_deref().and_then(build_glob);
     let mut files = Vec::new();
 
     for entry in builder.build() {
@@ -100,10 +101,22 @@ fn collect_files(root: &Path, args: &GrepArgs) -> Vec<PathBuf> {
         {
             continue;
         }
+        let relative_path = normalize_display_path(root, path);
+        if let Some(glob) = &glob
+            && !glob.is_match(&relative_path)
+        {
+            continue;
+        }
         files.push(path.to_path_buf());
     }
 
     files
+}
+
+fn build_glob(glob: &str) -> Option<globset::GlobSet> {
+    let mut builder = globset::GlobSetBuilder::new();
+    builder.add(globset::Glob::new(glob).ok()?);
+    builder.build().ok()
 }
 
 fn normalize_file_type(file_type: &str) -> String {
@@ -164,6 +177,7 @@ mod tests {
             hidden: false,
             no_ignore: false,
             path: None,
+            glob: None,
         }
     }
 

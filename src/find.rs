@@ -35,6 +35,7 @@ pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
     let scope = SearchScope {
         root,
         file_type: args.file_type.as_deref(),
+        glob: args.glob.as_deref(),
         hidden: args.hidden,
         no_ignore: args.no_ignore,
     };
@@ -204,6 +205,7 @@ mod tests {
             hidden: false,
             no_ignore: true,
             path: None,
+            glob: None,
         };
 
         let result = run_find(dir.path(), &args);
@@ -226,6 +228,7 @@ mod tests {
             hidden: false,
             no_ignore: true,
             path: None,
+            glob: None,
         };
 
         let result = run_find(dir.path(), &args);
@@ -256,6 +259,7 @@ mod tests {
             hidden: false,
             no_ignore: true,
             path: None,
+            glob: None,
         };
 
         let result = run_find(dir.path(), &args);
