@@ -61,6 +61,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
 
     let relation_terms = relation_terms(&query.relation);
     let subject_lower = query.subject.to_ascii_lowercase();
+    let subject_tokens = tokenize_subject(&query.subject);
     let support_terms = query
         .support
         .iter()
@@ -154,6 +155,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
             &file,
             &structure.items,
             &subject_lower,
+            &subject_tokens,
             &query.relation,
             args,
         );
@@ -227,6 +229,7 @@ fn build_regions(
     file: &TextFile,
     items: &[StructureItem],
     subject_lower: &str,
+    subject_tokens: &[String],
     relation: &Relation,
     args: &SmartArgs,
 ) -> Vec<SmartRegion> {
@@ -269,6 +272,7 @@ fn build_regions(
         }
 
         let exact_label_match = exact_subject_label_match(&item.label, subject_lower);
+        let token_label_match = subject_tokens_match_label(&item.label, subject_tokens);
         let kind = classify_region(item, relation, exact_label_match);
         if exact_label_match {
             score += match relation {
@@ -276,6 +280,12 @@ fn build_regions(
                 _ => 50,
             };
             why.push("exact subject label match".to_string());
+        } else if token_label_match {
+            score += match relation {
+                Relation::Defined | Relation::Implementation => 90,
+                _ => 35,
+            };
+            why.push("subject tokens match label".to_string());
         }
         match kind.as_str() {
             "render-site" | "definition" | "handler" | "assignment" => score += 20,
@@ -349,6 +359,41 @@ fn exact_subject_label_match(label: &str, subject_lower: &str) -> bool {
     label_lower == subject_lower
         || label_lower == subject_lower.replace(' ', "_")
         || label_lower == subject_lower.replace(' ', "-")
+}
+
+fn tokenize_subject(subject: &str) -> Vec<String> {
+    normalize_match_text(subject)
+        .split_whitespace()
+        .map(str::to_string)
+        .collect()
+}
+
+fn subject_tokens_match_label(label: &str, subject_tokens: &[String]) -> bool {
+    if subject_tokens.is_empty() {
+        return false;
+    }
+    let normalized_label = normalize_match_text(label);
+    subject_tokens
+        .iter()
+        .all(|token| normalized_label.contains(token.as_str()))
+}
+
+fn normalize_match_text(text: &str) -> String {
+    let mut out = String::new();
+    let mut prev_is_lower = false;
+    for ch in text.chars() {
+        if ch.is_ascii_uppercase() && prev_is_lower {
+            out.push(' ');
+        }
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            prev_is_lower = ch.is_ascii_lowercase();
+        } else {
+            out.push(' ');
+            prev_is_lower = false;
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn relation_terms(relation: &Relation) -> Vec<String> {

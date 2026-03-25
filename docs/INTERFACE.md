@@ -75,8 +75,15 @@ Examples:
 agentgrep smart subject:auth_status relation:rendered
 agentgrep smart subject:provider_name relation:comes_from support:config
 agentgrep smart subject:scroll relation:handled support:event
-agentgrep smart subject:lsp relation:implementation
+agentgrep smart subject:lsp relation:implementation kind:code path:src/tool
 ```
+
+Useful patterns:
+
+- `kind:code` to suppress docs-oriented results
+- `path:src/...` to bias toward or constrain a subtree
+- `--paths-only` when the caller only wants candidate files
+- `--debug-score` when tuning ranking behavior
 
 ## Shared flags
 
