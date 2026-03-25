@@ -172,20 +172,39 @@ Boost:
 - callbacks
 - event loop logic
 
+## DSL shape
+
+The initial `smart` interface should prefer a small DSL:
+
+```text
+subject:auth_status relation:rendered support:ui
+```
+
+Accepted forms should include `key:value` and `key=value`.
+
+Required keys:
+- `subject`
+- `relation`
+
+Optional keys:
+- `support`
+- `kind`
+- `path`
+
 ## Processing model without embeddings
 
 For a query like:
 
 ```text
-where is auth_status rendered
+subject:auth_status relation:rendered support:ui
 ```
 
 agentgrep should:
 
-1. keep the raw query
-2. normalize it
-3. extract `auth_status` as likely subject
-4. extract `rendered` as relation hint
+1. keep the raw terms
+2. normalize them
+3. use `auth_status` as explicit subject
+4. use `rendered` as explicit relation
 5. expand into lexical probes
 6. run internal searches for:
    - subject matches

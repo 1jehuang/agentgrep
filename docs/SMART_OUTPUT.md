@@ -174,6 +174,21 @@ Useful initial region kinds for code:
 
 These labels help the agent avoid having to infer role from raw lines.
 
+## Structure budget
+
+The structure section should not be only a teaser.
+It should act like a mini follow-up map of the file.
+
+Recommended default behavior:
+
+- show all directly relevant structure items first
+- then fill with nearby or major symbols in source order
+- show roughly 5-10 structure items by default in `find`
+- show roughly 8-12 structure items by default in `smart`
+- include start line always when available
+- include end line and line count when cheaply available
+- truncate only after the outline is genuinely useful
+
 ## Adaptive region inclusion
 
 The result shape should not always truncate aggressively.

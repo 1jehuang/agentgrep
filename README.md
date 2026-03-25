@@ -64,6 +64,8 @@ The key observation is that agents often search with questions like:
 The goal is not to make those queries magically semantic.
 The goal is to internally perform the broad lexical probing the agent would otherwise do manually, then return the smallest useful context packet.
 
+For reliability, `smart` is expected to use a small structured DSL rather than freeform natural language.
+
 ## Planned commands
 
 ```bash

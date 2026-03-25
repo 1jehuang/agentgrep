@@ -59,7 +59,7 @@ agentgrep find provider mod
 ```
 
 ### `agentgrep smart`
-Broad investigation mode.
+Broad investigation mode using a small structured DSL.
 
 Use when the user wants:
 
@@ -67,14 +67,15 @@ Use when the user wants:
 - relation-aware results
 - grouped files plus useful local structure
 - the smallest useful context packet
+- less ambiguity than freeform natural language
 
 Examples:
 
 ```bash
-agentgrep smart "where is auth_status rendered"
-agentgrep smart "where does provider_name come from"
-agentgrep smart "what handles scroll events"
-agentgrep smart "how is lsp implemented"
+agentgrep smart subject:auth_status relation:rendered
+agentgrep smart subject:provider_name relation:comes_from support:config
+agentgrep smart subject:scroll relation:handled support:event
+agentgrep smart subject:lsp relation:implementation
 ```
 
 ## Shared flags
