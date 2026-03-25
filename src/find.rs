@@ -43,7 +43,13 @@ pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
     for file in collect_text_files(&scope) {
         let relative_lower = file.relative_path.to_ascii_lowercase();
         let structure = extract_file_structure(&file.path, &file.relative_path, &file.text);
-        let (score, why) = score_file(&query_lower, &query_tokens, &relative_lower, &structure);
+        let (score, why) = score_file(
+            &query_lower,
+            &query_tokens,
+            &relative_lower,
+            &structure,
+            &file.text,
+        );
         if score <= 0 {
             continue;
         }
@@ -79,13 +85,16 @@ fn score_file(
     query_tokens: &[String],
     relative_lower: &str,
     structure: &FileStructure,
+    text: &str,
 ) -> (i32, Vec<String>) {
     let mut score = 0;
     let mut why = Vec::new();
+    let mut evidence_hits = 0;
 
     if relative_lower.contains(query_lower) {
         score += 120;
         why.push("path contains full query".to_string());
+        evidence_hits += 1;
     }
 
     let matched_tokens = query_tokens
@@ -95,6 +104,7 @@ fn score_file(
     if matched_tokens > 0 {
         score += (matched_tokens as i32) * 25;
         why.push(format!("path token matches: {matched_tokens}"));
+        evidence_hits += matched_tokens;
     }
 
     let mut structure_hits = 0;
@@ -107,6 +117,18 @@ fn score_file(
     if structure_hits > 0 {
         score += (structure_hits as i32) * 15;
         why.push(format!("symbol/outline hits: {structure_hits}"));
+        evidence_hits += structure_hits;
+    }
+
+    let text_lower = text.to_ascii_lowercase();
+    let text_hits = query_tokens
+        .iter()
+        .filter(|token| text_lower.contains(token.as_str()))
+        .count();
+    if text_hits > 0 {
+        score += (text_hits as i32) * 8;
+        why.push(format!("text hits: {text_hits}"));
+        evidence_hits += text_hits;
     }
 
     if query_tokens
@@ -131,6 +153,10 @@ fn score_file(
             why.push("test penalty".to_string());
         }
         _ => {}
+    }
+
+    if evidence_hits == 0 {
+        return (0, Vec::new());
     }
 
     (score, why)
