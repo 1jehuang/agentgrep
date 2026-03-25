@@ -286,6 +286,9 @@ fn build_regions(
                 _ => 35,
             };
             why.push("subject tokens match label".to_string());
+        } else if matches!(relation, Relation::Defined | Relation::Implementation) {
+            score -= 50;
+            why.push("non-owner penalty".to_string());
         }
         match kind.as_str() {
             "render-site" | "definition" | "handler" | "assignment" => score += 20,
