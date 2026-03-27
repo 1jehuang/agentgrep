@@ -29,7 +29,7 @@ agentgrep wins if developers and agents reach for it instead of a mix of:
    - robust to approximate path/name queries
    - ranked well
    - cold-path usable
-3. **Smart mode is genuinely investigation-saving**
+3. **Trace mode is genuinely investigation-saving**
    - one broad query often replaces several manual searches
    - grouped results reduce follow-up reads
    - outputs are explainable
@@ -57,9 +57,9 @@ parse -> search -> rank -> render -> exit
 - no fuzzy matching by default
 - no semantic interpretation by default
 
-Smartness may improve packaging and optional presentation, but it must not corrupt exact semantics.
+Structured packaging may improve optional presentation, but it must not corrupt exact semantics.
 
-### 3. Smartness is layered
+### 3. Trace heuristics are layered
 Heuristic behavior must happen after cheap, bounded candidate generation.
 The tool may do multiple internal search passes, but those passes should remain lexical-first and inspectable.
 

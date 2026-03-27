@@ -13,7 +13,7 @@ Benchmark `agentgrep` on the things it is actually trying to do:
 
 `agentgrep` is **not** trying to beat `rg` on raw exact-search speed.
 For exact search, `rg` is the baseline to respect.
-The real question is whether `find` and `smart` save enough follow-up searching and reading to justify their extra work.
+The real question is whether `find` and `trace` save enough follow-up searching and reading to justify their extra work.
 
 ## Environment
 
@@ -83,9 +83,9 @@ Measured with `wc` on human-readable output:
 | --- | ---: | ---: | ---: |
 | `grep` | 23 | 66 | 687 |
 | `find` | 81 | 367 | 2754 |
-| `smart` | 191 | 707 | 6961 |
+| `trace` | 191 | 707 | 6961 |
 
-This is a useful reminder that latency is only part of the story: `smart` is returning meaningfully more structured context than a plain exact match search.
+This is a useful reminder that latency is only part of the story: `trace` is returning meaningfully more structured context than a plain exact match search.
 
 ## Interpretation
 
@@ -111,7 +111,7 @@ That does **not** mean it is failing. It means:
 
 The current implementation is much faster than the earlier baseline for path-heavy topic queries because it avoids reading/parsing files until they survive cheap path-based filtering.
 
-### `smart`
+### `trace`
 
 `trace` is still doing more work than `grep`, but after the latest filtering changes it is much cheaper for subtree-constrained queries while still:
 
@@ -137,7 +137,7 @@ A better future benchmark suite should also measure:
 - whether the best file is present
 - whether the best region is present
 - whether the result avoided a follow-up `read`
-- whether one `smart` query replaced several manual search steps
+- whether one `trace` query replaced several manual search steps
 
 ## Reproducing the benchmark
 

@@ -11,11 +11,12 @@ CLI-first code search and retrieval for agents.
 
 with one search command that returns a **compact, structured, investigation-ready result packet**.
 
-It has three modes:
+It has four modes:
 
-- **`grep`** — exact lexical search, grouped by file
+- **`grep`** — exact lexical search, grouped by file and enclosing symbol
 - **`find`** — ranked file discovery with structure summaries
-- **`smart`** — structured investigation with ranked files **and** ranked code regions
+- **`outline`** — known-file structural scan without reading the whole body
+- **`trace`** — structured investigation with ranked files **and** ranked code regions
 
 The goal is not “semantic magic.” The goal is to do the broad lexical probing an agent would otherwise do manually, then return the **smallest useful context packet**.
 
@@ -90,19 +91,31 @@ agentgrep grep --type rs auth_status
 agentgrep grep --path /path/to/repo auth_status
 ```
 
-Example output:
+Side-by-side comparison with `rg`:
 
 ```text
+rg -n auth_status src/auth/mod.rs
+src/auth/mod.rs:218:pub fn auth_status() -> AuthStatus
+src/auth/mod.rs:241:let status = auth_status();
+
+agentgrep grep auth_status --path /repo
 query: auth_status
 matches: 6 in 3 files
 
 src/auth/mod.rs
-  symbols: 4 total, 2 matched, 2 other
+  symbols: 4 total, 1 matched, 3 other
     - function auth_status @ 218-246
       - @ 218 pub fn auth_status() -> AuthStatus
       - @ 241 let status = auth_status();
-    - other: enum AuthStatus @ 180-210; function format_status @ 247-268
+    - other: enum AuthStatus @ 180-210; function format_status @ 247-268; impl AuthStatus @ 269-320
 ```
+
+`rg` optimizes for raw match streaming. `agentgrep grep` keeps exact semantics, but returns a more agent-ready packet:
+
+- grouped by file
+- grouped by enclosing symbol when possible
+- preserves exact matching lines
+- includes a compact hint of other structure in the file
 
 ### 2. Ranked file discovery: `find`
 
@@ -115,7 +128,7 @@ agentgrep find transcription transcript voice dictate speech input
 agentgrep find --type rs remote session metadata
 ```
 
-Example output:
+Output shape:
 
 ```text
 query: auth status
@@ -142,7 +155,7 @@ agentgrep outline --path /path/to/repo src/tui/app/remote.rs
 agentgrep outline --max-items 20 src/main.rs
 ```
 
-Example output:
+Output shape:
 
 ```text
 file: src/tool/lsp.rs
@@ -173,7 +186,7 @@ agentgrep trace subject:provider_name relation:comes_from support:config
 agentgrep trace subject:scroll relation:handled support:event
 ```
 
-Example output:
+Output shape:
 
 ```text
 query parameters:
@@ -220,6 +233,82 @@ A simple heuristic:
 - topic / subsystem → `find`
 - known file, no body yet → `outline`
 - relation / usage / origin / handling → `trace`
+
+## Output format by mode
+
+### `grep`
+
+```text
+query: <literal-or-regex>
+matches: <match_count> in <file_count> files
+
+<file>
+  symbols: <total> total, <matched> matched, <other> other
+    - <kind> <label> @ <start>-<end>
+      - @ <line> <exact matching line>
+    - <file scope>
+      - @ <line> <exact matching line>
+    - other: <kind> <label> @ <start>-<end>; ...
+```
+
+### `find`
+
+```text
+query: <topic query>
+top files: <count>
+
+1. <file>
+   role: <role>
+   why:
+     - <reason>
+   structure:
+     - <kind> <label> @ <start>-<end> (<line_count> lines)
+     ... <n> more symbols
+```
+
+### `outline`
+
+```text
+file: <file>
+language: <language>
+role: <role>
+lines: <line_count>
+symbols: <symbol_count>
+
+structure:
+  - <kind> <label> @ <start>-<end> (<line_count> lines)
+  ... <n> more symbols
+context: <optional harness-context note>
+```
+
+### `trace`
+
+```text
+query parameters:
+  subject: <subject>
+  relation: <relation>
+  support: <optional support terms>
+  kind: <optional kind>
+  path_hint: <optional subtree hint>
+
+top results: <file_count> files, <region_count> regions
+best answer likely in <file>
+
+1. <file>
+   role: <role>
+   why:
+     - <reason>
+   structure:
+     - <kind> <label> @ <start>-<end> (<line_count> lines)
+   regions:
+     - <label> @ <start>-<end> (<line_count> lines)
+       kind: <region_kind>
+       snippet: | full region:
+         <body>
+       why:
+         - <reason>
+   context: <optional harness-context note>
+```
 
 ## Smart query DSL
 
@@ -324,24 +413,24 @@ Benchmarks below were run on the `jcode` repo using the release build on:
 
 | Case | Command | Mean time |
 | --- | --- | ---: |
-| Exact literal search | `agentgrep grep --path /home/jeremy/jcode transcription` | **37.9 ms** |
+| Exact literal search | `agentgrep grep --path /home/jeremy/jcode transcription` | **30.9 ms** |
 | Exact literal baseline | `rg -n transcription /home/jeremy/jcode` | **8.2 ms** |
-| Exact regex search | `agentgrep grep --regex --path /home/jeremy/jcode 'transcript|voice|dictation|speech'` | **40.0 ms** |
+| Exact regex search | `agentgrep grep --regex --path /home/jeremy/jcode 'transcript|voice|dictation|speech'` | **44.2 ms** |
 | Exact regex baseline | `rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode` | **8.7 ms** |
 | Ranked file discovery | `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **6.1 ms** |
-| Structured tracing | `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **37.4 ms** |
+| Structured tracing | `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **17.3 ms** |
 
 ### What those numbers mean
 
 - `grep` is **not trying to beat `rg` on raw speed**. `rg` is the baseline for exact search performance.
-- The current `find` and `smart` implementation benefits a lot from metadata-first filtering before reading/parsing files.
-- The interesting tradeoff is whether one `find` or `smart` query saves several follow-up `grep` + `read` steps.
+- The current `find` and `trace` implementation benefits a lot from metadata-first filtering before reading/parsing files.
+- The interesting tradeoff is whether one `find` or `trace` query saves several follow-up `grep` + `read` steps.
 
 For a representative `jcode` query, rough human-readable output sizes were:
 
 - `grep`: 23 lines / 687 bytes
 - `find`: 81 lines / 2754 bytes
-- `smart`: 191 lines / 6961 bytes
+- `trace`: 191 lines / 6961 bytes
 
 See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for commands and reproduction details.
 

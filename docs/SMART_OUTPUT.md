@@ -1,8 +1,8 @@
-# agentgrep Smart Output
+# agentgrep Output Shapes
 
 ## Purpose
 
-This document defines the default return shape for agentgrep's three core modes, with special focus on `smart`.
+This document defines the default return shape for agentgrep's four current modes, with special focus on `trace`.
 
 The central principle is:
 
@@ -97,7 +97,29 @@ top files: 5
      - likely UI consumer of auth status
 ```
 
-## 3. `smart`
+## 3. `outline`
+Default unit:
+
+> known file -> symbol map
+
+Recommended default text shape:
+
+```text
+file: src/tool/lsp.rs
+language: rust
+role: implementation
+lines: 95
+symbols: 9
+
+structure:
+  - struct LspTool @ 20-21 (2 lines)
+  - impl LspTool @ 22-22 (1 lines)
+  - struct LspInput @ 29-37 (9 lines)
+  - impl Tool @ 38-38 (1 lines)
+  - function execute @ 76-95 (20 lines)
+```
+
+## 4. `trace`
 Default unit:
 
 > ranked file -> usable follow-up outline -> ranked relevant regions
@@ -204,7 +226,7 @@ Recommended default behavior:
 - show all directly relevant structure items first
 - then fill with nearby or major symbols in source order
 - show roughly 5-10 structure items by default in `find`
-- show roughly 8-12 structure items by default in `smart`
+- show roughly 8-12 structure items by default in `trace`
 - include start line always when available
 - include end line and line count when cheaply available
 - truncate only after the outline is genuinely useful

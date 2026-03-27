@@ -19,13 +19,13 @@ Avoid speculative infrastructure until it clearly earns its keep.
 
 ### Deliverables
 - Rust crate initialized
-- CLI skeleton for `grep`, `find`, `smart`
+- CLI skeleton for `grep`, `find`, `trace`
 - command parsing tests
 - benchmark harness skeleton
 
 ### Exit criteria
 - `agentgrep --help` works
-- `agentgrep grep/find/smart --help` works
+- `agentgrep grep/find/trace --help` works
 - debug and release builds succeed
 
 ## Milestone 1 — exact lexical core
@@ -65,7 +65,7 @@ Avoid speculative infrastructure until it clearly earns its keep.
 ### Exit criteria
 - planner decisions are stable and understandable on curated example queries
 
-## Milestone 4 — smart mode v1
+## Milestone 4 — trace mode v1
 
 ### Deliverables
 - internal multi-pass lexical probing
@@ -75,7 +75,7 @@ Avoid speculative infrastructure until it clearly earns its keep.
 - region and structure extraction sufficient for useful output
 
 ### Exit criteria
-- `smart` often replaces several manual search/read steps on representative tasks
+- `trace` often replaces several manual search/read steps on representative tasks
 
 ## Milestone 5 — adaptive output shaping
 

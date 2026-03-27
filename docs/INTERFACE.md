@@ -162,7 +162,7 @@ agentgrep outline ...
 agentgrep symbols ...
 ```
 
-The project should resist surface-area growth until `grep`, `find`, and `smart` are excellent.
+The project should resist surface-area growth until `grep`, `find`, `outline`, and `trace` are excellent.
 
 ## Philosophy by mode
 
