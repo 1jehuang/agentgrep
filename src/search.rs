@@ -1,11 +1,11 @@
 use crate::cli::GrepArgs;
 use crate::structure::{StructureItem, extract_file_structure};
-use ignore::WalkBuilder;
+use crate::workspace::{SearchScope, collect_file_entries, read_text_file};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::thread;
 
 const OTHER_SYMBOLS_LIMIT: usize = 4;
 
@@ -49,46 +49,57 @@ pub struct MatchGroup {
 
 pub fn run_grep(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
     let matcher = Matcher::new(&args.query, args.regex)?;
-    let files = collect_files(root, args);
+    let scope = SearchScope {
+        root,
+        file_type: args.file_type.as_deref(),
+        glob: args.glob.as_deref(),
+        hidden: args.hidden,
+        no_ignore: args.no_ignore,
+    };
+    let files = collect_file_entries(&scope);
+    let worker_count = thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(1)
+        .min(files.len().max(1));
 
     let mut results = Vec::new();
     let mut total_matches = 0;
 
-    for path in files {
-        let Ok(bytes) = fs::read(&path) else {
-            continue;
-        };
-        if bytes.contains(&0) {
-            continue;
-        }
-
-        let text = String::from_utf8_lossy(&bytes);
-        let mut matches = Vec::new();
-        for (idx, line) in text.lines().enumerate() {
-            if matcher.is_match(line) {
-                matches.push(LineMatch {
-                    line_number: idx + 1,
-                    line_text: line.to_string(),
-                });
+    if worker_count <= 1 || files.len() <= 8 {
+        for entry in files {
+            if let Some(file_matches) = process_file(entry, &matcher) {
+                total_matches += file_matches.matches.len();
+                results.push(file_matches);
             }
         }
+    } else {
+        let chunk_size = files.len().div_ceil(worker_count);
+        let partials = thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for chunk in files.chunks(chunk_size) {
+                let matcher = matcher.clone();
+                handles.push(scope.spawn(move || {
+                    let mut partial = Vec::new();
+                    let mut partial_total = 0;
+                    for entry in chunk.iter().cloned() {
+                        if let Some(file_matches) = process_file(entry, &matcher) {
+                            partial_total += file_matches.matches.len();
+                            partial.push(file_matches);
+                        }
+                    }
+                    (partial, partial_total)
+                }));
+            }
 
-        if !matches.is_empty() {
-            let relative_path = normalize_display_path(root, &path);
-            let structure = extract_file_structure(&path, &relative_path, &text);
-            let grouping = group_matches(&structure.items, &matches);
-            total_matches += matches.len();
-            results.push(FileMatches {
-                path: relative_path,
-                language: structure.language,
-                role: structure.role,
-                matches,
-                groups: grouping.groups,
-                total_symbols: structure.items.len(),
-                matched_symbol_count: grouping.matched_symbol_count,
-                other_symbols: grouping.other_symbols,
-                other_symbols_omitted_count: grouping.other_symbols_omitted_count,
-            });
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("grep worker panicked"))
+                .collect::<Vec<_>>()
+        });
+
+        for (mut partial, partial_total) in partials {
+            total_matches += partial_total;
+            results.append(&mut partial);
         }
     }
 
@@ -104,67 +115,40 @@ pub fn run_grep(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
     })
 }
 
-fn collect_files(root: &Path, args: &GrepArgs) -> Vec<PathBuf> {
-    let mut builder = WalkBuilder::new(root);
-    builder.hidden(!args.hidden);
-    if args.no_ignore {
-        builder.git_ignore(false);
-        builder.git_global(false);
-        builder.git_exclude(false);
-        builder.ignore(false);
+fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option<FileMatches> {
+    let text = read_text_file(&entry.path)?;
+
+    let mut matches = Vec::new();
+    for (idx, line) in text.lines().enumerate() {
+        if matcher.is_match(line) {
+            matches.push(LineMatch {
+                line_number: idx + 1,
+                line_text: line.to_string(),
+            });
+        }
     }
 
-    let file_type = args.file_type.as_deref().map(normalize_file_type);
-    let glob = args.glob.as_deref().and_then(build_glob);
-    let mut files = Vec::new();
-
-    for entry in builder.build() {
-        let Ok(entry) = entry else {
-            continue;
-        };
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if let Some(expected_ext) = file_type.as_deref()
-            && path.extension().and_then(|s| s.to_str()) != Some(expected_ext)
-        {
-            continue;
-        }
-        let relative_path = normalize_display_path(root, path);
-        if let Some(glob) = &glob
-            && !glob.is_match(&relative_path)
-        {
-            continue;
-        }
-        files.push(path.to_path_buf());
+    if matches.is_empty() {
+        return None;
     }
 
-    files
+    let structure = extract_file_structure(&entry.path, &entry.relative_path, &text);
+    let grouping = group_matches(&structure.items, &matches);
+
+    Some(FileMatches {
+        path: entry.relative_path,
+        language: structure.language,
+        role: structure.role,
+        matches,
+        groups: grouping.groups,
+        total_symbols: structure.items.len(),
+        matched_symbol_count: grouping.matched_symbol_count,
+        other_symbols: grouping.other_symbols,
+        other_symbols_omitted_count: grouping.other_symbols_omitted_count,
+    })
 }
 
-fn build_glob(glob: &str) -> Option<globset::GlobSet> {
-    let mut builder = globset::GlobSetBuilder::new();
-    builder.add(globset::Glob::new(glob).ok()?);
-    builder.build().ok()
-}
-
-fn normalize_file_type(file_type: &str) -> String {
-    match file_type {
-        "rust" => "rs".to_string(),
-        "javascript" => "js".to_string(),
-        "typescript" => "ts".to_string(),
-        other => other.trim_start_matches('.').to_string(),
-    }
-}
-
-fn normalize_display_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .display()
-        .to_string()
-}
-
+#[derive(Clone)]
 struct Matcher {
     kind: MatcherKind,
 }
@@ -187,6 +171,7 @@ impl Matcher {
     }
 }
 
+#[derive(Clone)]
 enum MatcherKind {
     Literal(String),
     Regex(Regex),
@@ -267,6 +252,7 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
 mod tests {
     use super::*;
     use crate::cli::GrepArgs;
+    use std::fs;
     use tempfile::tempdir;
 
     fn grep_args(query: &str) -> GrepArgs {

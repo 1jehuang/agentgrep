@@ -98,18 +98,18 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
             text,
         };
         let text_lower = file.text.to_ascii_lowercase();
-        let structure = extract_file_structure(&file.path, &file.relative_path, &file.text);
-
-        let subject_mentions = find_lines(&file.text, &subject_lower);
-        if subject_mentions.is_empty()
-            && !relative_lower.contains(&subject_lower)
-            && !structure
-                .items
-            .iter()
-            .any(|item| item.label.to_ascii_lowercase().contains(&subject_lower))
-        {
+        if !file_may_contain_subject(
+            &relative_lower,
+            &text_lower,
+            &query.subject,
+            &subject_lower,
+            &subject_tokens,
+        ) {
             continue;
         }
+        let structure = extract_file_structure(&file.path, &file.relative_path, &file.text);
+        let lower_lines = collect_lower_lines(&file.text);
+        let subject_mentions = find_lines(&lower_lines, &subject_lower);
 
         let relation_hits = relation_terms
             .iter()
@@ -173,6 +173,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
         let mut regions = build_regions(
             &file,
             &structure.items,
+            &lower_lines,
             &subject_lower,
             &subject_tokens,
             &query.relation,
@@ -255,6 +256,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
 fn build_regions(
     file: &TextFile,
     items: &[StructureItem],
+    lower_lines: &[String],
     subject_lower: &str,
     subject_tokens: &[String],
     relation: &Relation,
@@ -273,10 +275,7 @@ fn build_regions(
         }
 
         let region_lines = &lines[start_idx..end_idx];
-        let region_lower = region_lines
-            .iter()
-            .map(|line| line.to_ascii_lowercase())
-            .collect::<Vec<_>>();
+        let region_lower = &lower_lines[start_idx..end_idx];
 
         let subject_line_hits = region_lower
             .iter()
@@ -376,8 +375,8 @@ fn build_regions(
                 )
             })
             .unwrap_or_default();
-        let full_region = should_include_full_region(item, args.full_region)
-            && !should_prune_region(familiarity);
+        let full_region =
+            should_include_full_region(item, args.full_region) && !should_prune_region(familiarity);
         let mut context_applied = None;
         let body = if full_region {
             extract_region(lines.as_slice(), item.start_line, item.end_line)
@@ -580,15 +579,48 @@ fn select_structure_items(
     selected
 }
 
-fn find_lines(text: &str, needle: &str) -> Vec<usize> {
-    text.lines()
+fn collect_lower_lines(text: &str) -> Vec<String> {
+    text.lines().map(|line| line.to_ascii_lowercase()).collect()
+}
+
+fn find_lines(lower_lines: &[String], needle: &str) -> Vec<usize> {
+    lower_lines
+        .iter()
         .enumerate()
-        .filter_map(|(idx, line)| {
-            line.to_ascii_lowercase()
-                .contains(needle)
-                .then_some(idx + 1)
-        })
+        .filter_map(|(idx, line)| line.contains(needle).then_some(idx + 1))
         .collect()
+}
+
+fn file_may_contain_subject(
+    relative_lower: &str,
+    text_lower: &str,
+    raw_subject: &str,
+    subject_lower: &str,
+    subject_tokens: &[String],
+) -> bool {
+    if relative_lower.contains(subject_lower) || text_lower.contains(subject_lower) {
+        return true;
+    }
+
+    let underscore_variant = raw_subject.to_ascii_lowercase().replace(' ', "_");
+    if underscore_variant != subject_lower
+        && (relative_lower.contains(&underscore_variant)
+            || text_lower.contains(&underscore_variant))
+    {
+        return true;
+    }
+
+    let hyphen_variant = raw_subject.to_ascii_lowercase().replace(' ', "-");
+    if hyphen_variant != subject_lower
+        && (relative_lower.contains(&hyphen_variant) || text_lower.contains(&hyphen_variant))
+    {
+        return true;
+    }
+
+    !subject_tokens.is_empty()
+        && subject_tokens
+            .iter()
+            .all(|token| relative_lower.contains(token) || text_lower.contains(token))
 }
 
 fn should_include_full_region(item: &StructureItem, mode: FullRegionMode) -> bool {
@@ -932,9 +964,11 @@ mod tests {
 
         let result = run_smart(dir.path(), &query, &args).unwrap();
         assert!(result.files[0].context_applied.is_some());
-        assert!(result.files[0]
-            .regions
-            .iter()
-            .any(|region| region.context_applied.is_some()));
+        assert!(
+            result.files[0]
+                .regions
+                .iter()
+                .any(|region| region.context_applied.is_some())
+        );
     }
 }

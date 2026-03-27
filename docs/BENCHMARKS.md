@@ -61,19 +61,19 @@ rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode > /dev/null
 
 | Case | Mean ± σ |
 | --- | ---: |
-| `agentgrep grep --path /home/jeremy/jcode transcription` | **37.9 ms ± 4.9 ms** |
+| `agentgrep grep --path /home/jeremy/jcode transcription` | **37.0 ms ± 2.3 ms** |
 | `rg -n transcription /home/jeremy/jcode` | **8.2 ms ± 0.9 ms** |
-| `agentgrep grep --regex --path /home/jeremy/jcode 'transcript\|voice\|dictation\|speech'` | **40.0 ms ± 3.7 ms** |
+| `agentgrep grep --regex --path /home/jeremy/jcode 'transcript\|voice\|dictation\|speech'` | **44.2 ms ± 14.0 ms** |
 | `rg -n -e 'transcript\|voice\|dictation\|speech' /home/jeremy/jcode` | **8.7 ms ± 1.0 ms** |
 | `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **6.1 ms ± 2.2 ms** |
-| `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **37.4 ms ± 6.9 ms** |
+| `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **17.2 ms ± 3.2 ms** |
 
 ### Relative speed notes
 
-- `rg` was about **4.6× faster** than `agentgrep grep` for the literal case.
-- `rg` was about **4.6× faster** than `agentgrep grep --regex` for the regex case.
+- `rg` was about **4.5× faster** than `agentgrep grep` for the literal case.
+- `rg` remains much faster than `agentgrep grep --regex`, though the regex run was noticeably noisier in this snapshot.
 - `find` dropped to roughly **single-digit milliseconds** for this topic query because it can now reject most files from path metadata alone.
-- `smart` dropped to roughly **~37 ms** for this query because `path:` and role filtering now happen before file reads/parsing.
+- `trace` dropped to roughly **~17 ms** for this query after adding a cheap subject/path prefilter before structure extraction and reusing pre-lowercased file lines during region scoring.
 
 ## Representative output sizes
 
@@ -96,7 +96,7 @@ This is a useful reminder that latency is only part of the story: `smart` is ret
 That does **not** mean it is failing. It means:
 
 - `rg` remains the reference point for pure exact search
-- `agentgrep grep` still needs optimization if raw exact-search speed becomes a priority
+- the latest macro win came from reusing the shared workspace scope and parallelizing per-file grep processing
 - the richer grouped output is the main tradeoff today
 
 ### `find`
@@ -113,7 +113,7 @@ The current implementation is much faster than the earlier baseline for path-hea
 
 ### `smart`
 
-`smart` is still doing more work than `grep`, but after the latest filtering changes it is much cheaper for subtree-constrained queries while still:
+`trace` is still doing more work than `grep`, but after the latest filtering changes it is much cheaper for subtree-constrained queries while still:
 
 - parsing a structured DSL
 - biasing toward relation-aware evidence
@@ -121,6 +121,11 @@ The current implementation is much faster than the earlier baseline for path-hea
 - optionally inlining small full regions
 
 That is the mode where the main payoff is expected: fewer follow-up `grep` + `read` calls.
+
+The latest improvement came from two simple macro optimizations:
+
+- reject files before structure extraction unless the subject appears plausible in the path/text
+- lowercase each file's lines once and reuse them across region scoring instead of re-lowercasing every candidate region
 
 ## Quality / workflow questions that still matter
 
@@ -145,7 +150,7 @@ scripts/benchmark.sh /home/jeremy/jcode
 
 ## Next optimizations worth exploring
 
-1. speed up `grep` file scanning and matching
-2. avoid repeated full-structure extraction where possible
-3. improve `smart` region selection so more queries end in a directly usable answer packet
-4. add a quality benchmark set, not just latency numbers
+1. add a quality benchmark set, not just latency numbers
+2. measure whether parallel traversal/search is worthwhile for `trace` on larger repos before adding complexity
+3. improve `trace` region selection so more queries end in a directly usable answer packet
+4. profile memory/output-size tradeoffs on very large repos
