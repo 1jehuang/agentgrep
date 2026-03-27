@@ -52,7 +52,7 @@ rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode > /dev/null
 ### Structured investigation
 
 ```bash
-./target/release/agentgrep smart --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui > /dev/null
+./target/release/agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui > /dev/null
 ```
 
 ## Results
@@ -66,7 +66,7 @@ rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode > /dev/null
 | `agentgrep grep --regex --path /home/jeremy/jcode 'transcript\|voice\|dictation\|speech'` | **40.0 ms ± 3.7 ms** |
 | `rg -n -e 'transcript\|voice\|dictation\|speech' /home/jeremy/jcode` | **8.7 ms ± 1.0 ms** |
 | `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **6.1 ms ± 2.2 ms** |
-| `agentgrep smart --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **37.4 ms ± 6.9 ms** |
+| `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **37.4 ms ± 6.9 ms** |
 
 ### Relative speed notes
 

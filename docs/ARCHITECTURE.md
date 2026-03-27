@@ -75,7 +75,7 @@ It is never the default foundation.
 ```bash
 agentgrep grep <query>
 agentgrep find <query>
-agentgrep smart <query>
+agentgrep trace <query>
 ```
 
 ### `grep`

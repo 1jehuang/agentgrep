@@ -51,9 +51,9 @@ hyperfine --warmup 2 --runs 10 \
   "$BIN find --path $REPO_PATH transcription transcript voice dictate speech input message > /dev/null"
 
 echo
-echo "-- smart latency --"
+echo "-- trace latency --"
 hyperfine --warmup 2 --runs 10 \
-  "$BIN smart --path $REPO_PATH subject:TranscriptMode relation:implementation kind:code path:src/tui > /dev/null"
+  "$BIN trace --path $REPO_PATH subject:TranscriptMode relation:implementation kind:code path:src/tui > /dev/null"
 
 echo
 echo "-- representative output sizes --"
@@ -61,5 +61,5 @@ echo "grep:"
 $BIN grep --path "$REPO_PATH" transcription | wc
 echo "find:"
 $BIN find --path "$REPO_PATH" transcription transcript voice dictate speech input message | wc
-echo "smart:"
-$BIN smart --path "$REPO_PATH" subject:TranscriptMode relation:implementation kind:code path:src/tui | wc
+echo "trace:"
+$BIN trace --path "$REPO_PATH" subject:TranscriptMode relation:implementation kind:code path:src/tui | wc

@@ -132,7 +132,7 @@ fn main() {
                 }
             }
         }
-        Command::Smart(args) => match parse_smart_query(&args.terms) {
+        Command::Trace(args) => match parse_smart_query(&args.terms) {
             Ok(query) => {
                 let root = resolve_root(&args.path);
                 let result = run_smart(&root, &query, &args);
@@ -159,7 +159,7 @@ fn main() {
                             other => other,
                         };
                         println!("debug plan:");
-                        println!("  mode: smart");
+                        println!("  mode: trace");
                         println!("  subject: {}", result.query.subject);
                         println!("  relation: {}", result.query.relation.as_str());
                         println!("  relation_terms: {relation_terms}");
@@ -251,8 +251,8 @@ fn main() {
             Err(err) => {
                 eprintln!("error: {err}");
                 eprintln!();
-                eprintln!("smart queries use a small DSL. Example:");
-                eprintln!("  agentgrep smart subject:auth_status relation:rendered support:ui");
+                eprintln!("trace queries use a small DSL. Example:");
+                eprintln!("  agentgrep trace subject:auth_status relation:rendered support:ui");
                 std::process::exit(2);
             }
         },

@@ -724,7 +724,7 @@ mod tests {
         .unwrap();
         fs::write(
             dir.path().join("src/main.rs"),
-            "fn main() {\n    eprintln!(\"agentgrep smart subject:auth_status relation:rendered support:ui\");\n}\n",
+            "fn main() {\n    eprintln!(\"agentgrep trace subject:auth_status relation:rendered support:ui\");\n}\n",
         )
         .unwrap();
 

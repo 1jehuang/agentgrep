@@ -50,7 +50,7 @@ Current commands:
 - `agentgrep grep`
 - `agentgrep find`
 - `agentgrep outline`
-- `agentgrep smart`
+- `agentgrep trace` (with `smart` kept as an alias)
 
 Current properties:
 
@@ -161,15 +161,15 @@ structure:
   - function execute @ 76-95 (20 lines)
 ```
 
-### 4. Structured investigation: `smart`
+### 4. Relation-aware tracing: `trace`
 
-Use `smart` when the question is about a **relationship**, not just a string.
+Use `trace` when the question is about a **relationship**, not just a string.
 
 ```bash
-agentgrep smart subject:auth_status relation:rendered
-agentgrep smart subject:lsp relation:implementation kind:code path:src/tool
-agentgrep smart subject:provider_name relation:comes_from support:config
-agentgrep smart subject:scroll relation:handled support:event
+agentgrep trace subject:auth_status relation:rendered
+agentgrep trace subject:lsp relation:implementation kind:code path:src/tool
+agentgrep trace subject:provider_name relation:comes_from support:config
+agentgrep trace subject:scroll relation:handled support:event
 ```
 
 Example output:
@@ -211,18 +211,18 @@ best answer likely in src/tui/app.rs
 - **Use `grep`** when you need exact matches.
 - **Use `find`** when you want the best files to inspect next.
 - **Use `outline`** when you know the file and want the structure first.
-- **Use `smart`** when you want the likely answer region for a relation-aware question.
+- **Use `trace`** when you want the likely answer region for a relation-aware question.
 
 A simple heuristic:
 
 - exact string → `grep`
 - topic / subsystem → `find`
 - known file, no body yet → `outline`
-- relation / usage / origin / handling → `smart`
+- relation / usage / origin / handling → `trace`
 
 ## Smart query DSL
 
-`smart` uses a small, explicit DSL instead of freeform natural language.
+`trace` uses a small, explicit DSL instead of freeform natural language.
 
 Required:
 
@@ -238,9 +238,9 @@ Optional:
 Examples:
 
 ```bash
-agentgrep smart subject:debug_socket relation:defined kind:code path:src
-agentgrep smart subject:TranscriptMode relation:implementation kind:code path:src/tui
-agentgrep smart subject:provider_name relation:comes_from support:config
+agentgrep trace subject:debug_socket relation:defined kind:code path:src
+agentgrep trace subject:TranscriptMode relation:implementation kind:code path:src/tui
+agentgrep trace subject:provider_name relation:comes_from support:config
 ```
 
 Built-in relation aliases include:
@@ -263,7 +263,7 @@ All three commands support script-friendly output forms.
 ```bash
 agentgrep grep --json auth_status
 agentgrep find --json debug socket
-agentgrep smart --json subject:lsp relation:implementation kind:code
+agentgrep trace --json subject:lsp relation:implementation kind:code
 ```
 
 ### Paths only
@@ -271,12 +271,12 @@ agentgrep smart --json subject:lsp relation:implementation kind:code
 ```bash
 agentgrep grep --paths-only auth_status
 agentgrep find --paths-only debug socket
-agentgrep smart --paths-only subject:lsp relation:implementation
+agentgrep trace --paths-only subject:lsp relation:implementation
 ```
 
-## Region expansion in `smart`
+## Region expansion in `trace`
 
-`smart` supports:
+`trace` supports:
 
 ```bash
 --full-region auto
@@ -311,7 +311,7 @@ Benchmarks below were run on the `jcode` repo using the release build on:
 | Exact regex search | `agentgrep grep --regex --path /home/jeremy/jcode 'transcript|voice|dictation|speech'` | **40.0 ms** |
 | Exact regex baseline | `rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode` | **8.7 ms** |
 | Ranked file discovery | `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **6.1 ms** |
-| Structured investigation | `agentgrep smart --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **37.4 ms** |
+| Structured tracing | `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **37.4 ms** |
 
 ### What those numbers mean
 

@@ -19,8 +19,9 @@ pub enum Command {
     Find(FindArgs),
     /// File structure outline for a known file.
     Outline(OutlineArgs),
-    /// Structured investigation mode using a small DSL.
-    Smart(SmartArgs),
+    /// Structured trace mode using a small relation-aware DSL.
+    #[command(name = "trace", visible_alias = "smart")]
+    Trace(SmartArgs),
 }
 
 #[derive(Debug, Clone, Parser)]

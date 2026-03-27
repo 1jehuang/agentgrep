@@ -17,7 +17,7 @@ The v1 sweet spot is a small number of strong commands with rich result shapes.
 agentgrep grep <query>
 agentgrep find <query>
 agentgrep outline <file>
-agentgrep smart <query>
+agentgrep trace <query>
 ```
 
 ## Command semantics
@@ -77,8 +77,8 @@ agentgrep outline --path /repo src/tui/app/remote.rs
 agentgrep outline --max-items 20 src/main.rs
 ```
 
-### `agentgrep smart`
-Broad investigation mode using a small structured DSL.
+### `agentgrep trace`
+Broad relation-aware tracing mode using a small structured DSL.
 
 Use when the user wants:
 
@@ -91,10 +91,10 @@ Use when the user wants:
 Examples:
 
 ```bash
-agentgrep smart subject:auth_status relation:rendered
-agentgrep smart subject:provider_name relation:comes_from support:config
-agentgrep smart subject:scroll relation:handled support:event
-agentgrep smart subject:lsp relation:implementation kind:code path:src/tool
+agentgrep trace subject:auth_status relation:rendered
+agentgrep trace subject:provider_name relation:comes_from support:config
+agentgrep trace subject:scroll relation:handled support:event
+agentgrep trace subject:lsp relation:implementation kind:code path:src/tool
 ```
 
 Useful patterns:
@@ -169,7 +169,7 @@ The project should resist surface-area growth until `grep`, `find`, and `smart` 
 - no ranking
 - line ranges and symbol map
 
-### `smart` = investigation
+### `trace` = relation-aware investigation
 - grouped
 - structured
 - relation-aware

@@ -25,9 +25,9 @@ echo "-- outline: src/tool/lsp.rs --"
 "${BIN[@]}" outline --path "$REPO_PATH" src/tool/lsp.rs | sed -n '1,25p'
 
 echo
-echo "-- smart: lsp implementation --"
-"${BIN[@]}" smart --path "$REPO_PATH" subject:lsp relation:implementation kind:code path:src/tool | sed -n '1,40p'
+echo "-- trace: lsp implementation --"
+"${BIN[@]}" trace --path "$REPO_PATH" subject:lsp relation:implementation kind:code path:src/tool | sed -n '1,40p'
 
 echo
-echo "-- smart: debug_socket defined --"
-"${BIN[@]}" smart --path "$REPO_PATH" subject:debug_socket relation:defined kind:code path:src | sed -n '1,40p'
+echo "-- trace: debug_socket defined --"
+"${BIN[@]}" trace --path "$REPO_PATH" subject:debug_socket relation:defined kind:code path:src | sed -n '1,40p'
