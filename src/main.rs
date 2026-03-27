@@ -124,6 +124,10 @@ fn main() {
                                 println!("  ... {} more symbols", result.structure.omitted_count);
                             }
                         }
+                        if let Some(note) = &result.context_applied {
+                            println!();
+                            println!("context: {note}");
+                        }
                     }
                 }
                 Err(err) => {
@@ -135,116 +139,136 @@ fn main() {
         Command::Trace(args) => match parse_smart_query(&args.terms) {
             Ok(query) => {
                 let root = resolve_root(&args.path);
-                let result = run_smart(&root, &query, &args);
-                if args.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&result).expect("serialize smart json")
-                    );
-                } else if args.paths_only {
-                    for file in result.files {
-                        println!("{}", file.path);
-                    }
-                } else {
-                    if args.debug_plan {
-                        let relation_terms = match result.query.relation.as_str() {
-                            "rendered" => "render, draw, ui, widget, view",
-                            "called_from" => "call, invoke, dispatch",
-                            "triggered_from" => "trigger, dispatch, schedule",
-                            "populated" => "set, assign, insert, push, build",
-                            "comes_from" => "source, load, parse, read, fetch",
-                            "handled" => "handle, handler, event, dispatch",
-                            "defined" => "fn, struct, enum, class, def",
-                            "implementation" => "impl, register, wire, tool",
-                            other => other,
-                        };
-                        println!("debug plan:");
-                        println!("  mode: trace");
-                        println!("  subject: {}", result.query.subject);
-                        println!("  relation: {}", result.query.relation.as_str());
-                        println!("  relation_terms: {relation_terms}");
-                        if let Some(kind) = &result.query.kind {
-                            println!("  kind filter: {kind}");
-                        }
-                        if let Some(path_hint) = &result.query.path_hint {
-                            println!("  path hint: {path_hint}");
-                        }
-                        if !result.query.support.is_empty() {
-                            println!("  support terms: {}", result.query.support.join(", "));
-                        }
-                        println!();
-                    }
-                    println!("query parameters:");
-                    println!("  subject: {}", result.query.subject);
-                    println!("  relation: {}", result.query.relation.as_str());
-                    if !result.query.support.is_empty() {
-                        println!("  support: {}", result.query.support.join(", "));
-                    }
-                    if let Some(kind) = &result.query.kind {
-                        println!("  kind: {kind}");
-                    }
-                    if let Some(path_hint) = &result.query.path_hint {
-                        println!("  path_hint: {path_hint}");
-                    }
-                    println!();
-                    println!(
-                        "top results: {} files, {} regions",
-                        result.summary.total_files, result.summary.total_regions
-                    );
-                    if result.files.is_empty() {
-                        println!("no results found for the current smart query and scope");
-                    }
-                    if let Some(best_file) = &result.summary.best_file {
-                        println!("best answer likely in {best_file}");
-                    }
-                    for (idx, file) in result.files.iter().enumerate() {
-                        println!();
-                        println!("{}. {}", idx + 1, file.path);
-                        println!("   role: {}", file.role);
-                        println!("   why:");
-                        for reason in &file.why {
-                            println!("     - {reason}");
-                        }
-                        if args.debug_score {
-                            println!("   score: {}", file.score);
-                        }
-                        println!("   structure:");
-                        for item in &file.structure.items {
+                match run_smart(&root, &query, &args) {
+                    Ok(result) => {
+                        if args.json {
                             println!(
-                                "     - {} {} @ {}-{} ({} lines)",
-                                item.kind,
-                                item.label,
-                                item.start_line,
-                                item.end_line,
-                                item.line_count
+                                "{}",
+                            serde_json::to_string_pretty(&result)
+                                .expect("serialize trace json")
                             );
-                        }
-                        if file.structure.omitted_count > 0 {
-                            println!("     ... {} more symbols", file.structure.omitted_count);
-                        }
-                        println!("   regions:");
-                        for region in &file.regions {
+                        } else if args.paths_only {
+                            for file in result.files {
+                                println!("{}", file.path);
+                            }
+                        } else {
+                            if args.debug_plan {
+                                let relation_terms = match result.query.relation.as_str() {
+                                    "rendered" => "render, draw, ui, widget, view",
+                                    "called_from" => "call, invoke, dispatch",
+                                    "triggered_from" => "trigger, dispatch, schedule",
+                                    "populated" => "set, assign, insert, push, build",
+                                    "comes_from" => "source, load, parse, read, fetch",
+                                    "handled" => "handle, handler, event, dispatch",
+                                    "defined" => "fn, struct, enum, class, def",
+                                    "implementation" => "impl, register, wire, tool",
+                                    other => other,
+                                };
+                                println!("debug plan:");
+                                println!("  mode: trace");
+                                println!("  subject: {}", result.query.subject);
+                                println!("  relation: {}", result.query.relation.as_str());
+                                println!("  relation_terms: {relation_terms}");
+                                if let Some(kind) = &result.query.kind {
+                                    println!("  kind filter: {kind}");
+                                }
+                                if let Some(path_hint) = &result.query.path_hint {
+                                    println!("  path hint: {path_hint}");
+                                }
+                                if !result.query.support.is_empty() {
+                                    println!(
+                                        "  support terms: {}",
+                                        result.query.support.join(", ")
+                                    );
+                                }
+                                println!();
+                            }
+                            println!("query parameters:");
+                            println!("  subject: {}", result.query.subject);
+                            println!("  relation: {}", result.query.relation.as_str());
+                            if !result.query.support.is_empty() {
+                                println!("  support: {}", result.query.support.join(", "));
+                            }
+                            if let Some(kind) = &result.query.kind {
+                                println!("  kind: {kind}");
+                            }
+                            if let Some(path_hint) = &result.query.path_hint {
+                                println!("  path_hint: {path_hint}");
+                            }
+                            println!();
                             println!(
-                                "     - {} @ {}-{} ({} lines)",
-                                region.label, region.start_line, region.end_line, region.line_count
+                                "top results: {} files, {} regions",
+                                result.summary.total_files, result.summary.total_regions
                             );
-                            println!("       kind: {}", region.kind);
-                            if args.debug_score {
-                                println!("       score: {}", region.score);
+                            if result.files.is_empty() {
+                                println!("no results found for the current trace query and scope");
                             }
-                            if region.full_region {
-                                println!("       full region:");
-                            } else {
-                                println!("       snippet:");
+                            if let Some(best_file) = &result.summary.best_file {
+                                println!("best answer likely in {best_file}");
                             }
-                            for line in region.body.lines() {
-                                println!("         {line}");
-                            }
-                            println!("       why:");
-                            for reason in &region.why {
-                                println!("         - {reason}");
+                            for (idx, file) in result.files.iter().enumerate() {
+                                println!();
+                                println!("{}. {}", idx + 1, file.path);
+                                println!("   role: {}", file.role);
+                                println!("   why:");
+                                for reason in &file.why {
+                                    println!("     - {reason}");
+                                }
+                                if args.debug_score {
+                                    println!("   score: {}", file.score);
+                                }
+                                println!("   structure:");
+                                for item in &file.structure.items {
+                                    println!(
+                                        "     - {} {} @ {}-{} ({} lines)",
+                                        item.kind,
+                                        item.label,
+                                        item.start_line,
+                                        item.end_line,
+                                        item.line_count
+                                    );
+                                }
+                                if file.structure.omitted_count > 0 {
+                                    println!("     ... {} more symbols", file.structure.omitted_count);
+                                }
+                                if let Some(note) = &file.context_applied {
+                                    println!("   context: {note}");
+                                }
+                                println!("   regions:");
+                                for region in &file.regions {
+                                    println!(
+                                        "     - {} @ {}-{} ({} lines)",
+                                        region.label,
+                                        region.start_line,
+                                        region.end_line,
+                                        region.line_count
+                                    );
+                                    println!("       kind: {}", region.kind);
+                                    if args.debug_score {
+                                        println!("       score: {}", region.score);
+                                    }
+                                    if region.full_region {
+                                        println!("       full region:");
+                                    } else {
+                                        println!("       snippet:");
+                                    }
+                                    for line in region.body.lines() {
+                                        println!("         {line}");
+                                    }
+                                    println!("       why:");
+                                    for reason in &region.why {
+                                        println!("         - {reason}");
+                                    }
+                                    if let Some(note) = &region.context_applied {
+                                        println!("       context: {note}");
+                                    }
+                                }
                             }
                         }
+                    }
+                    Err(err) => {
+                        eprintln!("error: {err}");
+                        std::process::exit(2);
                     }
                 }
             }

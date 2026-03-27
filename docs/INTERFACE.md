@@ -104,6 +104,17 @@ Useful patterns:
 - `--paths-only` when the caller only wants candidate files
 - `--debug-score` when tuning ranking behavior
 
+### Harness context
+
+`outline` and `trace` may accept a harness-provided context file:
+
+```bash
+agentgrep outline --context-json /tmp/agentgrep-context.json src/tool/lsp.rs
+agentgrep trace --context-json /tmp/agentgrep-context.json subject:auth_status relation:rendered
+```
+
+The context file should contain abstract familiarity/freshness/pruning signals rather than raw transcript mechanics. See `docs/HARNESS_CONTEXT.md`.
+
 ## Shared flags
 
 ### Output

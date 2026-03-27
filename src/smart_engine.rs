@@ -1,4 +1,5 @@
 use crate::cli::{FullRegionMode, SmartArgs};
+use crate::context::{Familiarity, HarnessContext};
 use crate::smart_dsl::{Relation, SmartQuery};
 use crate::structure::{StructureItem, extract_file_structure, infer_role};
 use crate::workspace::{SearchScope, TextFile, collect_file_entries, read_text_file};
@@ -29,6 +30,8 @@ pub struct SmartFile {
     pub why: Vec<String>,
     pub structure: SmartStructure,
     pub regions: Vec<SmartRegion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_applied: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -48,9 +51,11 @@ pub struct SmartRegion {
     pub body: String,
     pub full_region: bool,
     pub why: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_applied: Option<String>,
 }
 
-pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResult {
+pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<SmartResult, String> {
     let scope = SearchScope {
         root,
         file_type: args.file_type.as_deref(),
@@ -68,6 +73,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
         .map(|s| s.to_ascii_lowercase())
         .collect::<Vec<_>>();
     let path_hint = query.path_hint.as_ref().map(|s| s.to_ascii_lowercase());
+    let context = HarnessContext::load(args.context_json.as_deref())?;
 
     let mut files = Vec::new();
     for entry in collect_file_entries(&scope) {
@@ -171,6 +177,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
             &subject_tokens,
             &query.relation,
             args,
+            context.as_ref(),
         );
         if regions.is_empty() {
             continue;
@@ -203,8 +210,14 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
         why.push(format!("best region score: {best_region_score}"));
         regions.truncate(args.max_regions);
 
-        let shown_items = select_structure_items(&structure.items, &regions, 10);
+        let file_familiarity = context
+            .as_ref()
+            .map(|ctx| ctx.file_familiarity(&file.relative_path))
+            .unwrap_or_default();
+        let structure_budget = structure_budget_for_file(file_familiarity);
+        let shown_items = select_structure_items(&structure.items, &regions, structure_budget);
         let omitted_count = structure.items.len().saturating_sub(shown_items.len());
+        let context_applied = context_note_for_file(file_familiarity);
 
         files.push(SmartFile {
             path: file.relative_path,
@@ -217,6 +230,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
                 omitted_count,
             },
             regions,
+            context_applied,
         });
     }
 
@@ -226,7 +240,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
     let total_regions = files.iter().map(|f| f.regions.len()).sum();
     let best_file = files.first().map(|f| f.path.clone());
 
-    SmartResult {
+    Ok(SmartResult {
         query: query.clone(),
         root: root.display().to_string(),
         summary: SmartSummary {
@@ -235,7 +249,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
             best_file,
         },
         files,
-    }
+    })
 }
 
 fn build_regions(
@@ -245,6 +259,7 @@ fn build_regions(
     subject_tokens: &[String],
     relation: &Relation,
     args: &SmartArgs,
+    context: Option<&HarnessContext>,
 ) -> Vec<SmartRegion> {
     let relation_terms = relation_terms(relation);
     let lines = file.text.lines().collect::<Vec<_>>();
@@ -351,9 +366,24 @@ fn build_regions(
         } else {
             item.start_line
         };
-        let full_region = should_include_full_region(item, args.full_region);
+        let familiarity = context
+            .map(|ctx| {
+                ctx.region_familiarity(
+                    &file.relative_path,
+                    &item.label,
+                    item.start_line,
+                    item.end_line,
+                )
+            })
+            .unwrap_or_default();
+        let full_region = should_include_full_region(item, args.full_region)
+            && !should_prune_region(familiarity);
+        let mut context_applied = None;
         let body = if full_region {
             extract_region(lines.as_slice(), item.start_line, item.end_line)
+        } else if should_prune_region(familiarity) {
+            context_applied = Some("compressed repeated region from harness context".to_string());
+            region_lines[0].to_string()
         } else {
             lines[match_line_number - 1].to_string()
         };
@@ -368,10 +398,49 @@ fn build_regions(
             body,
             full_region,
             why,
+            context_applied,
         });
     }
 
     regions
+}
+
+fn should_prune_region(familiarity: Familiarity) -> bool {
+    familiarity.prune_confidence >= 0.7
+        && familiarity.body_confidence >= 0.7
+        && familiarity.current_version_confidence >= 0.6
+}
+
+fn structure_budget_for_file(familiarity: Familiarity) -> usize {
+    if familiarity.focused
+        && familiarity.structure_confidence >= 0.8
+        && familiarity.prune_confidence >= 0.7
+    {
+        4
+    } else if familiarity.structure_confidence >= 0.8
+        && familiarity.current_version_confidence >= 0.6
+        && familiarity.prune_confidence >= 0.7
+    {
+        6
+    } else {
+        10
+    }
+}
+
+fn context_note_for_file(familiarity: Familiarity) -> Option<String> {
+    if familiarity.focused
+        && familiarity.structure_confidence >= 0.8
+        && familiarity.prune_confidence >= 0.7
+    {
+        Some("compressed file structure from harness context".to_string())
+    } else if familiarity.structure_confidence >= 0.8
+        && familiarity.current_version_confidence >= 0.6
+        && familiarity.prune_confidence >= 0.7
+    {
+        Some("reduced repeated structure from harness context".to_string())
+    } else {
+        None
+    }
 }
 
 fn classify_region(item: &StructureItem, relation: &Relation, exact_label_match: bool) -> String {
@@ -610,9 +679,10 @@ mod tests {
             glob: None,
             hidden: false,
             no_ignore: false,
+            context_json: None,
         };
 
-        let result = run_smart(dir.path(), &query, &args);
+        let result = run_smart(dir.path(), &query, &args).unwrap();
         assert!(!result.files.is_empty());
         assert_eq!(result.files[0].path, "src/tui/app.rs");
         assert!(!result.files[0].regions.is_empty());
@@ -662,9 +732,10 @@ mod tests {
             glob: None,
             hidden: false,
             no_ignore: false,
+            context_json: None,
         };
 
-        let result = run_smart(dir.path(), &query, &args);
+        let result = run_smart(dir.path(), &query, &args).unwrap();
         assert!(result.files.iter().all(|f| !f.path.ends_with(".md")));
     }
 
@@ -705,9 +776,10 @@ mod tests {
             glob: None,
             hidden: false,
             no_ignore: false,
+            context_json: None,
         };
 
-        let result = run_smart(dir.path(), &query, &args);
+        let result = run_smart(dir.path(), &query, &args).unwrap();
         assert_eq!(result.files.len(), 1);
         assert_eq!(result.files[0].path, "src/tui/app.rs");
     }
@@ -749,9 +821,10 @@ mod tests {
             glob: None,
             hidden: false,
             no_ignore: false,
+            context_json: None,
         };
 
-        let result = run_smart(dir.path(), &query, &args);
+        let result = run_smart(dir.path(), &query, &args).unwrap();
         assert_eq!(result.files[0].path, "src/tui/app.rs");
     }
 
@@ -786,14 +859,82 @@ mod tests {
             glob: None,
             hidden: false,
             no_ignore: false,
+            context_json: None,
         };
 
-        let result = run_smart(dir.path(), &query, &args);
+        let result = run_smart(dir.path(), &query, &args).unwrap();
         assert_eq!(result.files[0].path, "src/tool/lsp.rs");
         assert!(matches!(
             result.files[0].regions[0].kind.as_str(),
             "reference" | "definition"
         ));
         assert!(result.files[0].regions[0].score >= result.files[0].regions[1].score);
+    }
+
+    #[test]
+    fn trace_context_can_compress_repeated_regions() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src/tool")).unwrap();
+        fs::write(
+            dir.path().join("src/tool/lsp.rs"),
+            "pub struct LspTool;\nimpl LspTool {}\nfn execute() {\n    let lsp = true;\n    println!(\"{}\", lsp);\n}\n",
+        )
+        .unwrap();
+        let context_path = dir.path().join("context.json");
+        fs::write(
+            &context_path,
+            r#"{
+  "known_files": [
+    {
+      "path": "src/tool/lsp.rs",
+      "structure_confidence": 0.95,
+      "current_version_confidence": 0.9,
+      "prune_confidence": 0.85
+    }
+  ],
+  "known_regions": [
+    {
+      "path": "src/tool/lsp.rs",
+      "start_line": 3,
+      "end_line": 6,
+      "body_confidence": 0.95,
+      "current_version_confidence": 0.9,
+      "prune_confidence": 0.9
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        let query = SmartQuery {
+            subject: "lsp".to_string(),
+            relation: Relation::Implementation,
+            support: vec![],
+            kind: Some("code".to_string()),
+            path_hint: Some("src/tool".to_string()),
+        };
+        let args = SmartArgs {
+            terms: vec![],
+            json: false,
+            max_files: 5,
+            max_regions: 5,
+            full_region: FullRegionMode::Auto,
+            debug_plan: false,
+            debug_score: false,
+            paths_only: false,
+            path: None,
+            file_type: None,
+            glob: None,
+            hidden: false,
+            no_ignore: false,
+            context_json: Some(context_path.display().to_string()),
+        };
+
+        let result = run_smart(dir.path(), &query, &args).unwrap();
+        assert!(result.files[0].context_applied.is_some());
+        assert!(result.files[0]
+            .regions
+            .iter()
+            .any(|region| region.context_applied.is_some()));
     }
 }

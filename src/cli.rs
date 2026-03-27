@@ -121,6 +121,10 @@ pub struct OutlineArgs {
     /// Optional root path to resolve relative file paths against.
     #[arg(long)]
     pub path: Option<String>,
+
+    /// Optional harness context JSON file.
+    #[arg(long = "context-json")]
+    pub context_json: Option<String>,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -176,6 +180,10 @@ pub struct SmartArgs {
     /// Ignore .gitignore and related ignore files.
     #[arg(long = "no-ignore")]
     pub no_ignore: bool,
+
+    /// Optional harness context JSON file.
+    #[arg(long = "context-json")]
+    pub context_json: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod context;
 pub mod find;
 pub mod outline;
 pub mod search;

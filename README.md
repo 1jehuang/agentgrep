@@ -255,6 +255,23 @@ Built-in relation aliases include:
 - `handled`
 - `implementation`
 
+### Harness-aware retrieval context
+
+`outline` and `trace` can optionally accept a harness-provided context packet:
+
+```bash
+agentgrep outline --context-json /tmp/agentgrep-context.json src/tool/lsp.rs
+agentgrep trace --context-json /tmp/agentgrep-context.json subject:lsp relation:implementation kind:code path:src/tool
+```
+
+This lets a harness tell `agentgrep` what the agent already likely knows, so it can:
+
+- compress repeated outlines
+- avoid re-inlining unchanged regions
+- prefer novel context when appropriate
+
+See [docs/HARNESS_CONTEXT.md](docs/HARNESS_CONTEXT.md) for the contract and implementation guidance.
+
 ## Output modes
 
 All three commands support script-friendly output forms.
