@@ -1,6 +1,6 @@
 use crate::cli::FindArgs;
 use crate::structure::{FileStructure, StructureItem, extract_file_structure};
-use crate::workspace::{SearchScope, collect_text_files};
+use crate::workspace::{SearchScope, collect_file_entries, read_text_file};
 use serde::Serialize;
 use std::path::Path;
 
@@ -41,15 +41,22 @@ pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
     };
 
     let mut files = Vec::new();
-    for file in collect_text_files(&scope) {
+    for file in collect_file_entries(&scope) {
         let relative_lower = file.relative_path.to_ascii_lowercase();
-        let structure = extract_file_structure(&file.path, &file.relative_path, &file.text);
+        if !has_path_evidence(&query_lower, &query_tokens, &relative_lower) {
+            continue;
+        }
+
+        let Some(text) = read_text_file(&file.path) else {
+            continue;
+        };
+        let structure = extract_file_structure(&file.path, &file.relative_path, &text);
         let (score, why) = score_file(
             &query_lower,
             &query_tokens,
             &relative_lower,
             &structure,
-            &file.text,
+            &text,
         );
         if score <= 0 {
             continue;
@@ -79,6 +86,13 @@ pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
         root: root.display().to_string(),
         files,
     }
+}
+
+fn has_path_evidence(query_lower: &str, query_tokens: &[String], relative_lower: &str) -> bool {
+    relative_lower.contains(query_lower)
+        || query_tokens
+            .iter()
+            .any(|token| relative_lower.contains(token.as_str()))
 }
 
 fn score_file(

@@ -273,17 +273,17 @@ Benchmarks below were run on the `jcode` repo using the release build on:
 
 | Case | Command | Mean time |
 | --- | --- | ---: |
-| Exact literal search | `agentgrep grep --path /home/jeremy/jcode transcription` | **32.0 ms** |
-| Exact literal baseline | `rg -n transcription /home/jeremy/jcode` | **6.3 ms** |
-| Exact regex search | `agentgrep grep --regex --path /home/jeremy/jcode 'transcript|voice|dictation|speech'` | **36.7 ms** |
-| Exact regex baseline | `rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode` | **5.2 ms** |
-| Ranked file discovery | `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **174.7 ms** |
-| Structured investigation | `agentgrep smart --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **208.4 ms** |
+| Exact literal search | `agentgrep grep --path /home/jeremy/jcode transcription` | **37.9 ms** |
+| Exact literal baseline | `rg -n transcription /home/jeremy/jcode` | **8.2 ms** |
+| Exact regex search | `agentgrep grep --regex --path /home/jeremy/jcode 'transcript|voice|dictation|speech'` | **40.0 ms** |
+| Exact regex baseline | `rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode` | **8.7 ms** |
+| Ranked file discovery | `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **6.1 ms** |
+| Structured investigation | `agentgrep smart --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **37.4 ms** |
 
 ### What those numbers mean
 
 - `grep` is **not trying to beat `rg` on raw speed**. `rg` is the baseline for exact search performance.
-- `find` and `smart` are doing more work: file discovery, outline extraction, scoring, grouping, and region selection.
+- The current `find` and `smart` implementation benefits a lot from metadata-first filtering before reading/parsing files.
 - The interesting tradeoff is whether one `find` or `smart` query saves several follow-up `grep` + `read` steps.
 
 For a representative `jcode` query, rough human-readable output sizes were:

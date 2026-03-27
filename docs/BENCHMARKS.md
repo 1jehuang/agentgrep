@@ -61,18 +61,19 @@ rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode > /dev/null
 
 | Case | Mean ± σ |
 | --- | ---: |
-| `agentgrep grep --path /home/jeremy/jcode transcription` | **32.0 ms ± 4.0 ms** |
-| `rg -n transcription /home/jeremy/jcode` | **6.3 ms ± 1.9 ms** |
-| `agentgrep grep --regex --path /home/jeremy/jcode 'transcript\|voice\|dictation\|speech'` | **36.7 ms ± 12.8 ms** |
-| `rg -n -e 'transcript\|voice\|dictation\|speech' /home/jeremy/jcode` | **5.2 ms ± 1.0 ms** |
-| `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **174.7 ms ± 25.4 ms** |
-| `agentgrep smart --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **208.4 ms ± 22.9 ms** |
+| `agentgrep grep --path /home/jeremy/jcode transcription` | **37.9 ms ± 4.9 ms** |
+| `rg -n transcription /home/jeremy/jcode` | **8.2 ms ± 0.9 ms** |
+| `agentgrep grep --regex --path /home/jeremy/jcode 'transcript\|voice\|dictation\|speech'` | **40.0 ms ± 3.7 ms** |
+| `rg -n -e 'transcript\|voice\|dictation\|speech' /home/jeremy/jcode` | **8.7 ms ± 1.0 ms** |
+| `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **6.1 ms ± 2.2 ms** |
+| `agentgrep smart --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **37.4 ms ± 6.9 ms** |
 
 ### Relative speed notes
 
-- `rg` was about **5.1× faster** than `agentgrep grep` for the literal case.
-- `rg` was about **7.1× faster** than `agentgrep grep --regex` for the regex case.
-- `find` and `smart` both landed around **~175–210 ms** on the `jcode` repo with no index.
+- `rg` was about **4.6× faster** than `agentgrep grep` for the literal case.
+- `rg` was about **4.6× faster** than `agentgrep grep --regex` for the regex case.
+- `find` dropped to roughly **single-digit milliseconds** for this topic query because it can now reject most files from path metadata alone.
+- `smart` dropped to roughly **~37 ms** for this query because `path:` and role filtering now happen before file reads/parsing.
 
 ## Representative output sizes
 
@@ -108,11 +109,11 @@ That does **not** mean it is failing. It means:
 - scoring candidate files
 - emitting compact outlines
 
-~200 ms for an unindexed, one-shot ranked file discovery pass is a reasonable starting point.
+The current implementation is much faster than the earlier baseline for path-heavy topic queries because it avoids reading/parsing files until they survive cheap path-based filtering.
 
 ### `smart`
 
-`smart` is currently in the same rough latency band as `find`, while also:
+`smart` is still doing more work than `grep`, but after the latest filtering changes it is much cheaper for subtree-constrained queries while still:
 
 - parsing a structured DSL
 - biasing toward relation-aware evidence

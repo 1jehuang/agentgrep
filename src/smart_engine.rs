@@ -1,7 +1,7 @@
 use crate::cli::{FullRegionMode, SmartArgs};
 use crate::smart_dsl::{Relation, SmartQuery};
-use crate::structure::{StructureItem, extract_file_structure};
-use crate::workspace::{SearchScope, TextFile, collect_text_files};
+use crate::structure::{StructureItem, extract_file_structure, infer_role};
+use crate::workspace::{SearchScope, TextFile, collect_file_entries, read_text_file};
 use serde::Serialize;
 use std::path::Path;
 
@@ -70,20 +70,37 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
     let path_hint = query.path_hint.as_ref().map(|s| s.to_ascii_lowercase());
 
     let mut files = Vec::new();
-    for file in collect_text_files(&scope) {
-        let structure = extract_file_structure(&file.path, &file.relative_path, &file.text);
-        if should_filter_kind(query.kind.as_deref(), &structure.role) {
+    for entry in collect_file_entries(&scope) {
+        let relative_lower = entry.relative_path.to_ascii_lowercase();
+        if let Some(path_hint) = &path_hint
+            && !relative_lower.contains(path_hint)
+        {
             continue;
         }
-        let relative_lower = file.relative_path.to_ascii_lowercase();
+
+        let inferred_role = infer_role(&entry.relative_path);
+        if should_filter_kind(query.kind.as_deref(), &inferred_role) {
+            continue;
+        }
+
+        let Some(text) = read_text_file(&entry.path) else {
+            continue;
+        };
+        let file = TextFile {
+            path: entry.path,
+            relative_path: entry.relative_path,
+            text,
+        };
+        let text_lower = file.text.to_ascii_lowercase();
+        let structure = extract_file_structure(&file.path, &file.relative_path, &file.text);
 
         let subject_mentions = find_lines(&file.text, &subject_lower);
         if subject_mentions.is_empty()
             && !relative_lower.contains(&subject_lower)
             && !structure
                 .items
-                .iter()
-                .any(|item| item.label.to_ascii_lowercase().contains(&subject_lower))
+            .iter()
+            .any(|item| item.label.to_ascii_lowercase().contains(&subject_lower))
         {
             continue;
         }
@@ -96,13 +113,13 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
                         .items
                         .iter()
                         .any(|item| item.label.to_ascii_lowercase().contains(term.as_str()))
-                    || file.text.to_ascii_lowercase().contains(term.as_str())
+                    || text_lower.contains(term.as_str())
             })
             .count();
 
         let support_hits = support_terms
             .iter()
-            .filter(|term| file.text.to_ascii_lowercase().contains(term.as_str()))
+            .filter(|term| text_lower.contains(term.as_str()))
             .count();
 
         let mut file_score = 0;
@@ -143,12 +160,8 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> SmartResu
             _ => {}
         }
         if let Some(path_hint) = &path_hint {
-            if relative_lower.contains(path_hint) {
-                file_score += 30;
-                why.push(format!("path hint matched: {path_hint}"));
-            } else {
-                continue;
-            }
+            file_score += 30;
+            why.push(format!("path hint matched: {path_hint}"));
         }
 
         let mut regions = build_regions(

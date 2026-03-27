@@ -13,13 +13,19 @@ pub struct SearchScope<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct FileEntry {
+    pub path: PathBuf,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct TextFile {
     pub path: PathBuf,
     pub relative_path: String,
     pub text: String,
 }
 
-pub fn collect_text_files(scope: &SearchScope<'_>) -> Vec<TextFile> {
+pub fn collect_file_entries(scope: &SearchScope<'_>) -> Vec<FileEntry> {
     let mut builder = WalkBuilder::new(scope.root);
     builder.hidden(!scope.hidden);
     if scope.no_ignore {
@@ -53,17 +59,37 @@ pub fn collect_text_files(scope: &SearchScope<'_>) -> Vec<TextFile> {
             continue;
         }
 
-        let Ok(bytes) = fs::read(path) else {
-            continue;
-        };
-        if bytes.contains(&0) {
-            continue;
-        }
-
-        let text = String::from_utf8_lossy(&bytes).into_owned();
-        files.push(TextFile {
+        files.push(FileEntry {
             path: path.to_path_buf(),
             relative_path,
+        });
+    }
+
+    files
+}
+
+pub fn read_text_file(path: &Path) -> Option<String> {
+    let Ok(bytes) = fs::read(path) else {
+        return None;
+    };
+    if bytes.contains(&0) {
+        return None;
+    }
+
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+pub fn collect_text_files(scope: &SearchScope<'_>) -> Vec<TextFile> {
+    let mut files = Vec::new();
+
+    for entry in collect_file_entries(scope) {
+        let Some(text) = read_text_file(&entry.path) else {
+            continue;
+        };
+
+        files.push(TextFile {
+            path: entry.path,
+            relative_path: entry.relative_path,
             text,
         });
     }

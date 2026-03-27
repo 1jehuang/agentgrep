@@ -1,6 +1,43 @@
 use regex::Regex;
 use serde::Serialize;
 use std::path::Path;
+use std::sync::LazyLock;
+
+static RUST_FN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap()
+});
+static RUST_STRUCT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*(?:pub\s+)?struct\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+static RUST_ENUM_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*(?:pub\s+)?enum\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+static RUST_TRAIT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*(?:pub\s+)?trait\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+static RUST_IMPL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*impl(?:\s*<[^>]+>)?\s+([^\s{]+)").unwrap());
+
+static TS_JS_FN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*(?:export\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap()
+});
+static TS_JS_CLASS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*(?:export\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap()
+});
+static TS_JS_INTERFACE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*(?:export\s+)?interface\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap()
+});
+static TS_JS_ARROW_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=.*=>")
+        .unwrap()
+});
+
+static PYTHON_DEF_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+static PYTHON_CLASS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+
+static MARKDOWN_HEADING_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(#+)\s+(.+)$").unwrap());
+static GENERIC_SECTION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*([A-Z][A-Z0-9_\- ]{3,})\s*$").unwrap());
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct StructureItem {
@@ -61,7 +98,7 @@ fn detect_language(path: &Path) -> String {
     .to_string()
 }
 
-fn infer_role(relative_path: &str) -> String {
+pub(crate) fn infer_role(relative_path: &str) -> String {
     let path = relative_path.to_ascii_lowercase();
     if path.contains("/tests/") || path.contains("_test") || path.contains("test_") {
         "test".to_string()
@@ -85,54 +122,38 @@ fn infer_role(relative_path: &str) -> String {
 }
 
 fn extract_rust(text: &str) -> Vec<StructureItem> {
-    let fn_re = Regex::new(r"^\s*(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    let struct_re = Regex::new(r"^\s*(?:pub\s+)?struct\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    let enum_re = Regex::new(r"^\s*(?:pub\s+)?enum\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    let trait_re = Regex::new(r"^\s*(?:pub\s+)?trait\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    let impl_re = Regex::new(r"^\s*impl(?:\s*<[^>]+>)?\s+([^\s{]+)").unwrap();
-
     collect_by_regexes(
         text,
         &[
-            ("function", &fn_re),
-            ("struct", &struct_re),
-            ("enum", &enum_re),
-            ("trait", &trait_re),
-            ("impl", &impl_re),
+            ("function", &RUST_FN_RE),
+            ("struct", &RUST_STRUCT_RE),
+            ("enum", &RUST_ENUM_RE),
+            ("trait", &RUST_TRAIT_RE),
+            ("impl", &RUST_IMPL_RE),
         ],
     )
 }
 
 fn extract_ts_js(text: &str) -> Vec<StructureItem> {
-    let fn_re = Regex::new(r"^\s*(?:export\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    let class_re = Regex::new(r"^\s*(?:export\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    let interface_re =
-        Regex::new(r"^\s*(?:export\s+)?interface\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    let arrow_re =
-        Regex::new(r"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=.*=>")
-            .unwrap();
     collect_by_regexes(
         text,
         &[
-            ("function", &fn_re),
-            ("class", &class_re),
-            ("interface", &interface_re),
-            ("function", &arrow_re),
+            ("function", &TS_JS_FN_RE),
+            ("class", &TS_JS_CLASS_RE),
+            ("interface", &TS_JS_INTERFACE_RE),
+            ("function", &TS_JS_ARROW_RE),
         ],
     )
 }
 
 fn extract_python(text: &str) -> Vec<StructureItem> {
-    let def_re = Regex::new(r"^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    let class_re = Regex::new(r"^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    collect_by_regexes(text, &[("function", &def_re), ("class", &class_re)])
+    collect_by_regexes(text, &[("function", &PYTHON_DEF_RE), ("class", &PYTHON_CLASS_RE)])
 }
 
 fn extract_markdown(text: &str) -> Vec<StructureItem> {
-    let heading_re = Regex::new(r"^(#+)\s+(.+)$").unwrap();
     let mut items = Vec::new();
     for (idx, line) in text.lines().enumerate() {
-        if let Some(caps) = heading_re.captures(line) {
+        if let Some(caps) = MARKDOWN_HEADING_RE.captures(line) {
             let level = caps.get(1).map(|m| m.as_str().len()).unwrap_or(1);
             let label = caps.get(2).map(|m| m.as_str().trim()).unwrap_or("");
             items.push(StructureItem {
@@ -148,8 +169,7 @@ fn extract_markdown(text: &str) -> Vec<StructureItem> {
 }
 
 fn extract_generic(text: &str) -> Vec<StructureItem> {
-    let section_re = Regex::new(r"^\s*([A-Z][A-Z0-9_\- ]{3,})\s*$").unwrap();
-    collect_by_regexes(text, &[("section", &section_re)])
+    collect_by_regexes(text, &[("section", &GENERIC_SECTION_RE)])
 }
 
 fn collect_by_regexes(text: &str, regexes: &[(&str, &Regex)]) -> Vec<StructureItem> {
