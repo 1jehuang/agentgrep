@@ -61,16 +61,16 @@ rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode > /dev/null
 
 | Case | Mean ± σ |
 | --- | ---: |
-| `agentgrep grep --path /home/jeremy/jcode transcription` | **37.0 ms ± 2.3 ms** |
+| `agentgrep grep --path /home/jeremy/jcode transcription` | **30.9 ms ± 1.7 ms** |
 | `rg -n transcription /home/jeremy/jcode` | **8.2 ms ± 0.9 ms** |
 | `agentgrep grep --regex --path /home/jeremy/jcode 'transcript\|voice\|dictation\|speech'` | **44.2 ms ± 14.0 ms** |
 | `rg -n -e 'transcript\|voice\|dictation\|speech' /home/jeremy/jcode` | **8.7 ms ± 1.0 ms** |
 | `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **6.1 ms ± 2.2 ms** |
-| `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **17.2 ms ± 3.2 ms** |
+| `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **17.3 ms ± 0.6 ms** |
 
 ### Relative speed notes
 
-- `rg` was about **4.5× faster** than `agentgrep grep` for the literal case.
+- `rg` was about **3.8× faster** than `agentgrep grep` for the literal case.
 - `rg` remains much faster than `agentgrep grep --regex`, though the regex run was noticeably noisier in this snapshot.
 - `find` dropped to roughly **single-digit milliseconds** for this topic query because it can now reject most files from path metadata alone.
 - `trace` dropped to roughly **~17 ms** for this query after adding a cheap subject/path prefilter before structure extraction and reusing pre-lowercased file lines during region scoring.
