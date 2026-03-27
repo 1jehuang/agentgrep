@@ -63,6 +63,37 @@ Current properties:
 - plain text output by default
 - JSON output for automation
 
+## Demo: `rg` vs `agentgrep` navigation race
+
+I ran the same code-navigation task twice in `jcode`:
+
+- one agent constrained to **`rg` / ripgrep-style search only**
+- one agent constrained to **`agentgrep` + targeted reads only**
+
+Task: find where transcript-submitted prompts get the literal `[transcription]` prefix, where those messages are rendered in the UI, and the next best function to inspect for adding a visible transcription badge.
+
+On this run, the **`agentgrep`-only pass finished faster** in the auto-edited replay timeline:
+
+- `rg` replay length: **44.9s**
+- `agentgrep` replay length: **40.3s**
+
+Auto-edited replay videos:
+
+- [`rg` navigation replay (MP4)](assets/demos/rg_navigation_race.mp4)
+- [`agentgrep` navigation replay (MP4)](assets/demos/agentgrep_navigation_race.mp4)
+
+If your Markdown renderer allows HTML video tags, you can also play them inline:
+
+<p>
+  <strong><code>rg</code> run</strong><br>
+  <video src="assets/demos/rg_navigation_race.mp4" controls muted playsinline width="100%"></video>
+</p>
+
+<p>
+  <strong><code>agentgrep</code> run</strong><br>
+  <video src="assets/demos/agentgrep_navigation_race.mp4" controls muted playsinline width="100%"></video>
+</p>
+
 ## Install
 
 ### Build locally
