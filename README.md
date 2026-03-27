@@ -82,17 +82,13 @@ Auto-edited replay videos:
 - [`rg` navigation replay (MP4)](assets/demos/rg_navigation_race.mp4)
 - [`agentgrep` navigation replay (MP4)](assets/demos/agentgrep_navigation_race.mp4)
 
-If your Markdown renderer allows HTML video tags, you can also play them inline:
+Trimmed GIF previews of the most interesting comparison window:
 
-<p>
-  <strong><code>rg</code> run</strong><br>
-  <video src="assets/demos/rg_navigation_race.mp4" controls muted playsinline width="100%"></video>
-</p>
+| `rg` run | `agentgrep` run |
+| --- | --- |
+| [![`rg` replay preview](assets/demos/rg_navigation_race_preview.gif)](assets/demos/rg_navigation_race.mp4) | [![`agentgrep` replay preview](assets/demos/agentgrep_navigation_race_preview.gif)](assets/demos/agentgrep_navigation_race.mp4) |
 
-<p>
-  <strong><code>agentgrep</code> run</strong><br>
-  <video src="assets/demos/agentgrep_navigation_race.mp4" controls muted playsinline width="100%"></video>
-</p>
+The GIFs are short previews; click either one for the full MP4 replay.
 
 ## Install
 
