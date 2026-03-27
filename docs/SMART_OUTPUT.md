@@ -39,7 +39,7 @@ All three modes should also support:
 ## 1. `grep`
 Default unit:
 
-> file -> exact matches
+> file -> matched symbols -> exact lines
 
 Recommended default text shape:
 
@@ -48,24 +48,23 @@ query: auth_status
 matches: 6 in 3 files
 
 src/auth/mod.rs
-  matches:
-    - auth_status @ 218
-      kind: definition
-      pub fn auth_status() -> AuthStatus
-    - auth_status @ 241
-      kind: reference
-      let status = auth_status();
+  symbols: 4 total, 1 matched, 3 other
+    - function auth_status @ 218-246
+      - @ 218 pub fn auth_status() -> AuthStatus
+      - @ 241 let status = auth_status();
+    - other: enum AuthStatus @ 180-210; function format_status @ 247-268; impl AuthStatus @ 269-320
 
 src/tui/app.rs
-  matches:
-    - render_status_bar @ 9005
-      kind: callsite
-      let status = auth_status();
+  symbols: 6 total, 1 matched, 5 other
+    - function render_status_bar @ 8990-9017
+      - @ 9005 let status = auth_status();
+    - other: function draw_header @ 8901-8940; function draw_footer @ 8941-8989; ... 3 more
 ```
 
 Important rule:
 - match set must remain exact and exhaustive
 - structure must remain lightweight enough not to distort grep semantics
+- unmatched structure should be a compact hint, not a full second outline dump
 
 ## 2. `find`
 Default unit:

@@ -40,10 +40,53 @@ fn main() {
                         for file in result.files {
                             println!();
                             println!("{}", file.path);
-                            println!("  matches:");
-                            for line_match in file.matches {
-                                println!("    - @ {}", line_match.line_number);
-                                println!("      {}", line_match.line_text);
+                            if file.total_symbols > 0 {
+                                println!(
+                                    "  symbols: {} total, {} matched, {} other",
+                                    file.total_symbols,
+                                    file.matched_symbol_count,
+                                    file.total_symbols.saturating_sub(file.matched_symbol_count)
+                                );
+                            } else {
+                                println!("  symbols: no structural items detected");
+                            }
+                            for group in file.groups {
+                                match (group.start_line, group.end_line) {
+                                    (Some(start_line), Some(end_line)) => println!(
+                                        "    - {} {} @ {}-{}",
+                                        group.kind, group.label, start_line, end_line
+                                    ),
+                                    _ => println!("    - {}", group.label),
+                                }
+                                for line_match in group.matches {
+                                    println!(
+                                        "      - @ {} {}",
+                                        line_match.line_number, line_match.line_text
+                                    );
+                                }
+                            }
+                            if !file.other_symbols.is_empty() {
+                                let mut summary = file
+                                    .other_symbols
+                                    .iter()
+                                    .map(|item| {
+                                        format!(
+                                            "{} {} @ {}-{}",
+                                            item.kind, item.label, item.start_line, item.end_line
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("; ");
+                                if file.other_symbols_omitted_count > 0 {
+                                    if !summary.is_empty() {
+                                        summary.push_str("; ");
+                                    }
+                                    summary.push_str(&format!(
+                                        "... {} more",
+                                        file.other_symbols_omitted_count
+                                    ));
+                                }
+                                println!("    - other: {summary}");
                             }
                         }
                     }
@@ -100,15 +143,17 @@ fn main() {
                     if args.json {
                         println!(
                             "{}",
-                            serde_json::to_string_pretty(&result)
-                                .expect("serialize outline json")
+                            serde_json::to_string_pretty(&result).expect("serialize outline json")
                         );
                     } else {
                         println!("file: {}", result.path);
                         println!("language: {}", result.language);
                         println!("role: {}", result.role);
                         println!("lines: {}", result.total_lines);
-                        println!("symbols: {}", result.structure.items.len() + result.structure.omitted_count);
+                        println!(
+                            "symbols: {}",
+                            result.structure.items.len() + result.structure.omitted_count
+                        );
                         println!();
                         println!("structure:");
                         if result.structure.items.is_empty() {
@@ -117,7 +162,11 @@ fn main() {
                             for item in &result.structure.items {
                                 println!(
                                     "  - {} {} @ {}-{} ({} lines)",
-                                    item.kind, item.label, item.start_line, item.end_line, item.line_count
+                                    item.kind,
+                                    item.label,
+                                    item.start_line,
+                                    item.end_line,
+                                    item.line_count
                                 );
                             }
                             if result.structure.omitted_count > 0 {
@@ -144,8 +193,8 @@ fn main() {
                         if args.json {
                             println!(
                                 "{}",
-                            serde_json::to_string_pretty(&result)
-                                .expect("serialize trace json")
+                                serde_json::to_string_pretty(&result)
+                                    .expect("serialize trace json")
                             );
                         } else if args.paths_only {
                             for file in result.files {
@@ -229,7 +278,10 @@ fn main() {
                                     );
                                 }
                                 if file.structure.omitted_count > 0 {
-                                    println!("     ... {} more symbols", file.structure.omitted_count);
+                                    println!(
+                                        "     ... {} more symbols",
+                                        file.structure.omitted_count
+                                    );
                                 }
                                 if let Some(note) = &file.context_applied {
                                     println!("   context: {note}");

@@ -1,9 +1,13 @@
 use crate::cli::GrepArgs;
+use crate::structure::{StructureItem, extract_file_structure};
 use ignore::WalkBuilder;
 use regex::Regex;
 use serde::Serialize;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+const OTHER_SYMBOLS_LIMIT: usize = 4;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct GrepResult {
@@ -18,13 +22,29 @@ pub struct GrepResult {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FileMatches {
     pub path: String,
+    pub language: String,
+    pub role: String,
     pub matches: Vec<LineMatch>,
+    pub groups: Vec<MatchGroup>,
+    pub total_symbols: usize,
+    pub matched_symbol_count: usize,
+    pub other_symbols: Vec<StructureItem>,
+    pub other_symbols_omitted_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct LineMatch {
     pub line_number: usize,
     pub line_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct MatchGroup {
+    pub kind: String,
+    pub label: String,
+    pub start_line: Option<usize>,
+    pub end_line: Option<usize>,
+    pub matches: Vec<LineMatch>,
 }
 
 pub fn run_grep(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
@@ -54,10 +74,20 @@ pub fn run_grep(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
         }
 
         if !matches.is_empty() {
+            let relative_path = normalize_display_path(root, &path);
+            let structure = extract_file_structure(&path, &relative_path, &text);
+            let grouping = group_matches(&structure.items, &matches);
             total_matches += matches.len();
             results.push(FileMatches {
-                path: normalize_display_path(root, &path),
+                path: relative_path,
+                language: structure.language,
+                role: structure.role,
                 matches,
+                groups: grouping.groups,
+                total_symbols: structure.items.len(),
+                matched_symbol_count: grouping.matched_symbol_count,
+                other_symbols: grouping.other_symbols,
+                other_symbols_omitted_count: grouping.other_symbols_omitted_count,
             });
         }
     }
@@ -162,6 +192,77 @@ enum MatcherKind {
     Regex(Regex),
 }
 
+struct GroupingResult {
+    groups: Vec<MatchGroup>,
+    matched_symbol_count: usize,
+    other_symbols: Vec<StructureItem>,
+    other_symbols_omitted_count: usize,
+}
+
+fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResult {
+    let mut grouped_matches: BTreeMap<usize, Vec<LineMatch>> = BTreeMap::new();
+    let mut matched_indices = HashSet::new();
+    let mut file_scope_matches = Vec::new();
+
+    for line_match in matches {
+        if let Some((idx, _item)) = items.iter().enumerate().find(|(_, item)| {
+            item.start_line <= line_match.line_number && line_match.line_number <= item.end_line
+        }) {
+            matched_indices.insert(idx);
+            grouped_matches
+                .entry(idx)
+                .or_default()
+                .push(line_match.clone());
+        } else {
+            file_scope_matches.push(line_match.clone());
+        }
+    }
+
+    let mut groups = Vec::new();
+    if !file_scope_matches.is_empty() {
+        groups.push(MatchGroup {
+            kind: "file-scope".to_string(),
+            label: "<file scope>".to_string(),
+            start_line: None,
+            end_line: None,
+            matches: file_scope_matches,
+        });
+    }
+
+    for (idx, item) in items.iter().enumerate() {
+        let Some(matches) = grouped_matches.remove(&idx) else {
+            continue;
+        };
+        groups.push(MatchGroup {
+            kind: item.kind.clone(),
+            label: item.label.clone(),
+            start_line: Some(item.start_line),
+            end_line: Some(item.end_line),
+            matches,
+        });
+    }
+
+    let mut other_symbols = Vec::new();
+    let mut other_symbols_omitted_count = 0;
+    for (idx, item) in items.iter().enumerate() {
+        if matched_indices.contains(&idx) {
+            continue;
+        }
+        if other_symbols.len() < OTHER_SYMBOLS_LIMIT {
+            other_symbols.push(item.clone());
+        } else {
+            other_symbols_omitted_count += 1;
+        }
+    }
+
+    GroupingResult {
+        groups,
+        matched_symbol_count: matched_indices.len(),
+        other_symbols,
+        other_symbols_omitted_count,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +299,8 @@ mod tests {
         assert_eq!(result.files[0].path, "a.rs");
         assert_eq!(result.files[0].matches[0].line_number, 1);
         assert_eq!(result.files[0].matches[1].line_number, 2);
+        assert_eq!(result.files[0].groups.len(), 1);
+        assert_eq!(result.files[0].groups[0].label, "auth_status");
     }
 
     #[test]
@@ -240,5 +343,52 @@ mod tests {
         let result = run_grep(dir.path(), &args).unwrap();
         assert_eq!(result.total_files, 1);
         assert_eq!(result.files[0].path, "src/tool/a.rs");
+    }
+
+    #[test]
+    fn grep_groups_matches_by_enclosing_symbol_and_keeps_other_structure_summary() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("a.rs"),
+            concat!(
+                "fn render_status_bar() {\n",
+                "    let status = auth_status();\n",
+                "    ui.label(auth_status().to_string());\n",
+                "}\n\n",
+                "fn draw_header() {}\n\n",
+                "fn auth_status() -> AuthStatus {\n",
+                "    auth_status_impl()\n",
+                "}\n",
+            ),
+        )
+        .unwrap();
+
+        let result = run_grep(dir.path(), &grep_args("auth_status")).unwrap();
+        let file = &result.files[0];
+        assert_eq!(file.total_symbols, 3);
+        assert_eq!(file.matched_symbol_count, 2);
+        assert_eq!(file.groups.len(), 2);
+        assert_eq!(file.groups[0].label, "render_status_bar");
+        assert_eq!(file.groups[0].matches.len(), 2);
+        assert_eq!(file.groups[1].label, "auth_status");
+        assert_eq!(file.groups[1].matches.len(), 2);
+        assert_eq!(file.other_symbols.len(), 1);
+        assert_eq!(file.other_symbols[0].label, "draw_header");
+    }
+
+    #[test]
+    fn grep_uses_file_scope_group_when_no_symbol_encloses_match() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("a.txt"),
+            "AUTH_STATUS=ok\nnot interesting\n",
+        )
+        .unwrap();
+
+        let result = run_grep(dir.path(), &grep_args("AUTH_STATUS")).unwrap();
+        let file = &result.files[0];
+        assert_eq!(file.groups.len(), 1);
+        assert_eq!(file.groups[0].label, "<file scope>");
+        assert_eq!(file.groups[0].matches[0].line_number, 1);
     }
 }

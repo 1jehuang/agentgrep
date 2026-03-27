@@ -97,11 +97,11 @@ query: auth_status
 matches: 6 in 3 files
 
 src/auth/mod.rs
-  matches:
-    - @ 218
-      pub fn auth_status() -> AuthStatus
-    - @ 241
-      let status = auth_status();
+  symbols: 4 total, 2 matched, 2 other
+    - function auth_status @ 218-246
+      - @ 218 pub fn auth_status() -> AuthStatus
+      - @ 241 let status = auth_status();
+    - other: enum AuthStatus @ 180-210; function format_status @ 247-268
 ```
 
 ### 2. Ranked file discovery: `find`

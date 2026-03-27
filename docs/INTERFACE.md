@@ -30,6 +30,8 @@ Use when the user wants:
 - exact content matches
 - predictable semantics
 - exhaustive results
+- enclosing-symbol grouping for easier triage
+- a compact hint of surrounding file structure
 - script-friendly behavior
 
 Examples:
