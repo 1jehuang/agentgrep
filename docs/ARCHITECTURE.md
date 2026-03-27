@@ -70,6 +70,9 @@ If cache is missing, stale, corrupted, or disabled, agentgrep still works.
 If semantic retrieval is ever added, it is optional and additive.
 It is never the default foundation.
 
+### 6. Harness context is abstract
+If a harness provides retrieval context, it should provide abstract familiarity/freshness/pruning signals rather than raw transcript mechanics.
+
 ## Core commands
 
 ```bash
@@ -84,7 +87,7 @@ Purpose: exact content search.
 ### `find`
 Purpose: ranked file/path discovery.
 
-### `smart`
+### `trace`
 Purpose: one broad investigative query in, one grouped answer packet out.
 
 ## High-level system design

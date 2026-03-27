@@ -58,6 +58,7 @@ Current properties:
 - no background index
 - no embeddings
 - no hidden personalization
+- optional harness-provided retrieval context for smarter result shaping
 - plain text output by default
 - JSON output for automation
 
@@ -332,8 +333,8 @@ See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for commands and reproduction detai
 Current limitations are intentional:
 
 - `grep` is still slower than `rg`
-- `smart` uses a small DSL rather than full natural language
-- `smart` region expansion is still conservative
+- `trace` uses a small DSL rather than full natural language
+- `trace` region expansion is still conservative
 - there is no persistent index yet
 - ranking is lexical/structural, not embedding-based
 
@@ -346,6 +347,7 @@ Current limitations are intentional:
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/INTERFACE.md](docs/INTERFACE.md)
+- [docs/HARNESS_CONTEXT.md](docs/HARNESS_CONTEXT.md)
 - [docs/SMART_OUTPUT.md](docs/SMART_OUTPUT.md)
 - [docs/QUERY_INTENT.md](docs/QUERY_INTENT.md)
 - [docs/BENCHMARKS.md](docs/BENCHMARKS.md)

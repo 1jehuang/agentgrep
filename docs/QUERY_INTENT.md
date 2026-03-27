@@ -16,7 +16,7 @@ A query should normalize into a small structured object with:
 - likely subject
 - likely relation/intent
 - support terms
-- mode (`grep`, `find`, `smart`)
+- mode (`grep`, `find`, `trace`)
 
 ## Query object
 
@@ -45,7 +45,7 @@ User wants exact lexical truth.
 ### `find`
 User wants files/paths.
 
-### `smart`
+### `trace`
 User wants interpretation, multi-pass probing, fusion, and grouped output.
 
 ## Intent taxonomy
@@ -174,7 +174,7 @@ Boost:
 
 ## DSL shape
 
-The initial `smart` interface should prefer a small DSL:
+The initial `trace` interface should prefer a small DSL:
 
 ```text
 subject:auth_status relation:rendered support:ui
