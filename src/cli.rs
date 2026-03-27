@@ -17,6 +17,8 @@ pub enum Command {
     Grep(GrepArgs),
     /// Ranked file/path discovery.
     Find(FindArgs),
+    /// File structure outline for a known file.
+    Outline(OutlineArgs),
     /// Structured investigation mode using a small DSL.
     Smart(SmartArgs),
 }
@@ -100,6 +102,24 @@ pub struct FindArgs {
     /// Restrict candidate files by glob.
     #[arg(long)]
     pub glob: Option<String>,
+}
+
+#[derive(Debug, Clone, Parser)]
+pub struct OutlineArgs {
+    /// File path to outline.
+    pub file: String,
+
+    /// Emit JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Maximum structure items to print. Defaults to all detected items.
+    #[arg(long)]
+    pub max_items: Option<usize>,
+
+    /// Optional root path to resolve relative file paths against.
+    #[arg(long)]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Parser)]

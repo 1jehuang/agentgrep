@@ -21,6 +21,10 @@ echo "-- find: debug socket --"
 "${BIN[@]}" find --path "$REPO_PATH" debug socket | sed -n '1,25p'
 
 echo
+echo "-- outline: src/tool/lsp.rs --"
+"${BIN[@]}" outline --path "$REPO_PATH" src/tool/lsp.rs | sed -n '1,25p'
+
+echo
 echo "-- smart: lsp implementation --"
 "${BIN[@]}" smart --path "$REPO_PATH" subject:lsp relation:implementation kind:code path:src/tool | sed -n '1,40p'
 

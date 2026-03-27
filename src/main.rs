@@ -1,5 +1,6 @@
 use agentgrep::cli::{Cli, Command};
 use agentgrep::find::run_find;
+use agentgrep::outline::run_outline;
 use agentgrep::search::run_grep;
 use agentgrep::smart_dsl::parse_smart_query;
 use agentgrep::smart_engine::run_smart;
@@ -89,6 +90,45 @@ fn main() {
                     if file.structure.omitted_count > 0 {
                         println!("     ... {} more symbols", file.structure.omitted_count);
                     }
+                }
+            }
+        }
+        Command::Outline(args) => {
+            let root = resolve_root(&args.path);
+            match run_outline(&root, &args) {
+                Ok(result) => {
+                    if args.json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result)
+                                .expect("serialize outline json")
+                        );
+                    } else {
+                        println!("file: {}", result.path);
+                        println!("language: {}", result.language);
+                        println!("role: {}", result.role);
+                        println!("lines: {}", result.total_lines);
+                        println!("symbols: {}", result.structure.items.len() + result.structure.omitted_count);
+                        println!();
+                        println!("structure:");
+                        if result.structure.items.is_empty() {
+                            println!("  (no structural items detected)");
+                        } else {
+                            for item in &result.structure.items {
+                                println!(
+                                    "  - {} {} @ {}-{} ({} lines)",
+                                    item.kind, item.label, item.start_line, item.end_line, item.line_count
+                                );
+                            }
+                            if result.structure.omitted_count > 0 {
+                                println!("  ... {} more symbols", result.structure.omitted_count);
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    eprintln!("error: {err}");
+                    std::process::exit(2);
                 }
             }
         }

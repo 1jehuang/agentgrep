@@ -49,6 +49,7 @@ Current commands:
 
 - `agentgrep grep`
 - `agentgrep find`
+- `agentgrep outline`
 - `agentgrep smart`
 
 Current properties:
@@ -130,7 +131,37 @@ top files: 5
      ... 5 more symbols
 ```
 
-### 3. Structured investigation: `smart`
+### 3. File structure scan: `outline`
+
+Use `outline` when you already know the file and want its structure without fully reading it.
+
+```bash
+agentgrep outline src/tool/lsp.rs
+agentgrep outline --path /path/to/repo src/tui/app/remote.rs
+agentgrep outline --max-items 20 src/main.rs
+```
+
+Example output:
+
+```text
+file: src/tool/lsp.rs
+language: rust
+role: implementation
+lines: 95
+symbols: 9
+
+structure:
+  - struct LspTool @ 20-21 (2 lines)
+  - impl LspTool @ 22-22 (1 lines)
+  - struct LspInput @ 29-37 (9 lines)
+  - impl Tool @ 38-38 (1 lines)
+  - function name @ 39-42 (4 lines)
+  - function description @ 43-47 (5 lines)
+  - function parameters_schema @ 48-75 (28 lines)
+  - function execute @ 76-95 (20 lines)
+```
+
+### 4. Structured investigation: `smart`
 
 Use `smart` when the question is about a **relationship**, not just a string.
 
@@ -179,12 +210,14 @@ best answer likely in src/tui/app.rs
 
 - **Use `grep`** when you need exact matches.
 - **Use `find`** when you want the best files to inspect next.
+- **Use `outline`** when you know the file and want the structure first.
 - **Use `smart`** when you want the likely answer region for a relation-aware question.
 
 A simple heuristic:
 
 - exact string → `grep`
 - topic / subsystem → `find`
+- known file, no body yet → `outline`
 - relation / usage / origin / handling → `smart`
 
 ## Smart query DSL

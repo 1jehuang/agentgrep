@@ -16,6 +16,7 @@ The v1 sweet spot is a small number of strong commands with rich result shapes.
 ```bash
 agentgrep grep <query>
 agentgrep find <query>
+agentgrep outline <file>
 agentgrep smart <query>
 ```
 
@@ -56,6 +57,24 @@ Examples:
 agentgrep find auth status
 agentgrep find debug socket
 agentgrep find provider mod
+```
+
+### `agentgrep outline`
+File structure scan for a known file.
+
+Use when the user wants:
+
+- symbol inventory for a file
+- start/end ranges for functions, impls, structs, headings, etc.
+- a cheap pre-read map of the file
+- structure without full body retrieval
+
+Examples:
+
+```bash
+agentgrep outline src/tool/lsp.rs
+agentgrep outline --path /repo src/tui/app/remote.rs
+agentgrep outline --max-items 20 src/main.rs
 ```
 
 ### `agentgrep smart`
@@ -144,6 +163,11 @@ The project should resist surface-area growth until `grep`, `find`, and `smart` 
 - file-oriented
 - ranked
 - approximate and robust
+
+### `outline` = structure
+- known-file oriented
+- no ranking
+- line ranges and symbol map
 
 ### `smart` = investigation
 - grouped
