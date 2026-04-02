@@ -5,6 +5,7 @@ use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
+use std::process::Command;
 use std::thread;
 
 const OTHER_SYMBOLS_LIMIT: usize = 4;
@@ -48,6 +49,14 @@ pub struct MatchGroup {
 }
 
 pub fn run_grep(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
+    if let Some(result) = run_grep_with_rg(root, args)? {
+        return Ok(result);
+    }
+
+    run_grep_native(root, args)
+}
+
+fn run_grep_native(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
     let matcher = Matcher::new(&args.query, args.regex)?;
     let scope = SearchScope {
         root,
@@ -113,6 +122,225 @@ pub fn run_grep(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
         total_matches,
         files: results,
     })
+}
+
+fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, String> {
+    let Some(output) = run_rg_search(root, args)? else {
+        return Ok(None);
+    };
+
+    let match_map = parse_rg_json(&output.stdout)?;
+    if args.paths_only {
+        let files = match_map
+            .keys()
+            .cloned()
+            .map(|path| FileMatches {
+                path,
+                language: String::new(),
+                role: String::new(),
+                matches: Vec::new(),
+                groups: Vec::new(),
+                total_symbols: 0,
+                matched_symbol_count: 0,
+                other_symbols: Vec::new(),
+                other_symbols_omitted_count: 0,
+            })
+            .collect::<Vec<_>>();
+
+        return Ok(Some(GrepResult {
+            query: args.query.clone(),
+            regex: args.regex,
+            root: root.display().to_string(),
+            total_files: files.len(),
+            total_matches: 0,
+            files,
+        }));
+    }
+
+    let matched_files = match_map.into_iter().collect::<Vec<_>>();
+    let worker_count = thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(1)
+        .min(matched_files.len().max(1));
+
+    let mut results = Vec::with_capacity(matched_files.len());
+    let mut total_matches = 0;
+    if worker_count <= 1 || matched_files.len() <= 8 {
+        for (path, matches) in matched_files {
+            if let Some(file_matches) = process_rg_match_file(root, path, matches) {
+                total_matches += file_matches.matches.len();
+                results.push(file_matches);
+            }
+        }
+    } else {
+        let chunk_size = matched_files.len().div_ceil(worker_count);
+        let partials = thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for chunk in matched_files.chunks(chunk_size) {
+                handles.push(scope.spawn(move || {
+                    let mut partial = Vec::new();
+                    let mut partial_total = 0;
+                    for (path, matches) in chunk.iter().cloned() {
+                        if let Some(file_matches) = process_rg_match_file(root, path, matches) {
+                            partial_total += file_matches.matches.len();
+                            partial.push(file_matches);
+                        }
+                    }
+                    (partial, partial_total)
+                }));
+            }
+
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("rg grep worker panicked"))
+                .collect::<Vec<_>>()
+        });
+
+        for (mut partial, partial_total) in partials {
+            total_matches += partial_total;
+            results.append(&mut partial);
+        }
+    }
+
+    results.sort_by(|a, b| a.path.cmp(&b.path));
+
+    Ok(Some(GrepResult {
+        query: args.query.clone(),
+        regex: args.regex,
+        root: root.display().to_string(),
+        total_files: results.len(),
+        total_matches,
+        files: results,
+    }))
+}
+
+fn run_rg_search(root: &Path, args: &GrepArgs) -> Result<Option<std::process::Output>, String> {
+    let mut command = Command::new("rg");
+    command.current_dir(root);
+    command.arg("--json");
+    command.arg("--line-number");
+    command.arg("--with-filename");
+    command.arg("--color").arg("never");
+    command.arg("--no-heading");
+
+    if args.regex {
+        command.arg("-e").arg(&args.query);
+    } else {
+        command.arg("--fixed-strings");
+        command.arg(&args.query);
+    }
+
+    if args.hidden {
+        command.arg("--hidden");
+    }
+    if args.no_ignore {
+        command.arg("--no-ignore");
+    }
+    if let Some(glob) = &args.glob {
+        command.arg("-g").arg(glob);
+    }
+    if let Some(file_type) = args.file_type.as_deref() {
+        let ext = crate::workspace::normalize_file_type(file_type);
+        command.arg("-g").arg(format!("*.{ext}"));
+    }
+
+    command.arg(".");
+
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to execute rg: {err}")),
+    };
+
+    match output.status.code() {
+        Some(0) | Some(1) => Ok(Some(output)),
+        Some(code) => Err(format!(
+            "rg failed with exit code {code}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )),
+        None => Err("rg terminated by signal".to_string()),
+    }
+}
+
+fn parse_rg_json(stdout: &[u8]) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
+    let mut matches_by_path: BTreeMap<String, Vec<LineMatch>> = BTreeMap::new();
+
+    for line in stdout.split(|byte| *byte == b'\n') {
+        if line.is_empty() {
+            continue;
+        }
+        let event: RgEvent = serde_json::from_slice(line)
+            .map_err(|err| format!("failed to parse rg json output: {err}"))?;
+        let Some(data) = event.data else {
+            continue;
+        };
+        if event.kind != "match" {
+            continue;
+        }
+        let Some(path) = data.path.and_then(|path| path.text) else {
+            return Err("rg json output did not include a UTF-8 match path".to_string());
+        };
+        let Some(line_number) = data.line_number else {
+            return Err("rg json output did not include line numbers".to_string());
+        };
+        let Some(line_text) = data.lines.and_then(|lines| lines.text) else {
+            return Err("rg json output did not include UTF-8 line text".to_string());
+        };
+        matches_by_path
+            .entry(normalize_rg_path(&path))
+            .or_default()
+            .push(LineMatch {
+                line_number,
+                line_text: line_text.trim_end_matches(['\n', '\r']).to_string(),
+            });
+    }
+
+    Ok(matches_by_path)
+}
+
+fn normalize_rg_path(path: &str) -> String {
+    path.strip_prefix("./").unwrap_or(path).to_string()
+}
+
+fn process_rg_match_file(
+    root: &Path,
+    path: String,
+    matches: Vec<LineMatch>,
+) -> Option<FileMatches> {
+    let absolute_path = root.join(&path);
+    let text = read_text_file(&absolute_path)?;
+    let structure = extract_file_structure(&absolute_path, &path, &text);
+    let grouping = group_matches(&structure.items, &matches);
+    Some(FileMatches {
+        path,
+        language: structure.language,
+        role: structure.role,
+        matches,
+        groups: grouping.groups,
+        total_symbols: structure.items.len(),
+        matched_symbol_count: grouping.matched_symbol_count,
+        other_symbols: grouping.other_symbols,
+        other_symbols_omitted_count: grouping.other_symbols_omitted_count,
+    })
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RgEvent {
+    #[serde(rename = "type")]
+    kind: String,
+    data: Option<RgEventData>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RgEventData {
+    path: Option<RgTextField>,
+    lines: Option<RgTextField>,
+    line_number: Option<usize>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RgTextField {
+    text: Option<String>,
 }
 
 fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option<FileMatches> {

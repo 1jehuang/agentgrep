@@ -11,9 +11,12 @@ Benchmark `agentgrep` on the things it is actually trying to do:
 3. structured investigation latency
 4. downstream usefulness relative to manual search workflows
 
-`agentgrep` is **not** trying to beat `rg` on raw exact-search speed.
-For exact search, `rg` is the baseline to respect.
+`agentgrep` is **not** trying to beat `rg`'s core engine at raw exact-search speed.
+For exact search, `rg` is still the baseline to respect.
 The real question is whether `find` and `trace` save enough follow-up searching and reading to justify their extra work.
+
+That said, `grep` should avoid wasting work when `rg` is available locally.
+The current implementation now opportunistically uses `rg` as the lexical scan backend for `grep`, then layers agentgrep's grouped structural output on top.
 
 ## Environment
 
@@ -33,14 +36,18 @@ Benchmark snapshot captured on:
 
 ```bash
 ./target/release/agentgrep grep --path /home/jeremy/jcode transcription > /dev/null
+./target/release/agentgrep grep --paths-only --path /home/jeremy/jcode transcription > /dev/null
 rg -n transcription /home/jeremy/jcode > /dev/null
+rg -l transcription /home/jeremy/jcode > /dev/null
 ```
 
 ### Exact regex search
 
 ```bash
 ./target/release/agentgrep grep --regex --path /home/jeremy/jcode 'transcript|voice|dictation|speech' > /dev/null
+./target/release/agentgrep grep --regex --paths-only --path /home/jeremy/jcode 'transcript|voice|dictation|speech' > /dev/null
 rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode > /dev/null
+rg -l -e 'transcript|voice|dictation|speech' /home/jeremy/jcode > /dev/null
 ```
 
 ### Ranked file discovery
@@ -61,19 +68,25 @@ rg -n -e 'transcript|voice|dictation|speech' /home/jeremy/jcode > /dev/null
 
 | Case | Mean ± σ |
 | --- | ---: |
-| `agentgrep grep --path /home/jeremy/jcode transcription` | **30.9 ms ± 1.7 ms** |
-| `rg -n transcription /home/jeremy/jcode` | **8.2 ms ± 0.9 ms** |
-| `agentgrep grep --regex --path /home/jeremy/jcode 'transcript\|voice\|dictation\|speech'` | **44.2 ms ± 14.0 ms** |
-| `rg -n -e 'transcript\|voice\|dictation\|speech' /home/jeremy/jcode` | **8.7 ms ± 1.0 ms** |
-| `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **6.1 ms ± 2.2 ms** |
-| `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **17.3 ms ± 0.6 ms** |
+| `agentgrep grep --path /home/jeremy/jcode transcription` | **12.3 ms ± 1.4 ms** |
+| `agentgrep grep --paths-only --path /home/jeremy/jcode transcription` | **5.2 ms ± 0.7 ms** |
+| `rg -n transcription /home/jeremy/jcode` | **6.4 ms ± 0.8 ms** |
+| `rg -l transcription /home/jeremy/jcode` | **4.8 ms ± 1.1 ms** |
+| `agentgrep grep --regex --path /home/jeremy/jcode 'transcript\|voice\|dictation\|speech'` | **33.3 ms ± 4.3 ms** |
+| `agentgrep grep --regex --paths-only --path /home/jeremy/jcode 'transcript\|voice\|dictation\|speech'` | **6.2 ms ± 0.9 ms** |
+| `rg -n -e 'transcript\|voice\|dictation\|speech' /home/jeremy/jcode` | **6.9 ms ± 0.8 ms** |
+| `rg -l -e 'transcript\|voice\|dictation\|speech' /home/jeremy/jcode` | **7.1 ms ± 0.5 ms** |
+| `agentgrep find --path /home/jeremy/jcode transcription transcript voice dictate speech input message` | **6.0 ms ± 1.7 ms** |
+| `agentgrep trace --path /home/jeremy/jcode subject:TranscriptMode relation:implementation kind:code path:src/tui` | **25.6 ms ± 1.1 ms** |
 
 ### Relative speed notes
 
-- `rg` was about **3.8× faster** than `agentgrep grep` for the literal case.
-- `rg` remains much faster than `agentgrep grep --regex`, though the regex run was noticeably noisier in this snapshot.
-- `find` dropped to roughly **single-digit milliseconds** for this topic query because it can now reject most files from path metadata alone.
-- `trace` dropped to roughly **~17 ms** for this query after adding a cheap subject/path prefilter before structure extraction and reusing pre-lowercased file lines during region scoring.
+- Human-readable literal `grep` is now about **1.9×** slower than `rg -n`, down from roughly **3.6-3.8×** in the earlier baseline.
+- `grep --paths-only` is now within about **8%** of `rg -l` for the literal case.
+- `grep --regex --paths-only` is now effectively at parity with `rg -l -e ...` for this query.
+- Human-readable regex `grep` is still slower because it pays the extra cost of reopening each matched file, extracting structure, and grouping matches into symbols after the fast lexical pass.
+- `find` stays in roughly **single-digit milliseconds** for this topic query because it can reject most files from path metadata alone.
+- `trace` remains much heavier than `grep`; this snapshot came in around **~26 ms** for the chosen subtree-constrained query.
 
 ## Representative output sizes
 
@@ -91,13 +104,13 @@ This is a useful reminder that latency is only part of the story: `trace` is ret
 
 ### `grep`
 
-`agentgrep grep` is currently slower than `rg`, which is expected.
+`agentgrep grep` is still slower than plain `rg` when it emits richer grouped output, which is expected.
 
 That does **not** mean it is failing. It means:
 
 - `rg` remains the reference point for pure exact search
-- the latest macro win came from reusing the shared workspace scope and parallelizing per-file grep processing
-- the richer grouped output is the main tradeoff today
+- the latest macro win came from using `rg` as an optional lexical accelerator for `grep`, then only doing agent-specific structure work on matched files
+- the richer grouped output is now the main remaining tradeoff today, not the raw lexical scan itself
 
 ### `find`
 
@@ -122,7 +135,7 @@ The current implementation is much faster than the earlier baseline for path-hea
 
 That is the mode where the main payoff is expected: fewer follow-up `grep` + `read` calls.
 
-The latest improvement came from two simple macro optimizations:
+The biggest earlier trace improvement came from two simple macro optimizations:
 
 - reject files before structure extraction unless the subject appears plausible in the path/text
 - lowercase each file's lines once and reuse them across region scoring instead of re-lowercasing every candidate region
