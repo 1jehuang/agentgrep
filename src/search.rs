@@ -125,15 +125,12 @@ fn run_grep_native(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
 }
 
 fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, String> {
-    let Some(output) = run_rg_search(root, args)? else {
-        return Ok(None);
-    };
-
-    let match_map = parse_rg_json(&output.stdout)?;
     if args.paths_only {
-        let files = match_map
-            .keys()
-            .cloned()
+        let Some(paths) = run_rg_paths_only(root, args)? else {
+            return Ok(None);
+        };
+        let files = paths
+            .into_iter()
             .map(|path| FileMatches {
                 path,
                 language: String::new(),
@@ -157,6 +154,11 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
         }));
     }
 
+    let Some(output) = run_rg_search(root, args)? else {
+        return Ok(None);
+    };
+
+    let match_map = parse_rg_json(&output.stdout)?;
     let matched_files = match_map.into_iter().collect::<Vec<_>>();
     let worker_count = thread::available_parallelism()
         .map(|parallelism| parallelism.get())
@@ -214,14 +216,66 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
     }))
 }
 
+fn run_rg_paths_only(root: &Path, args: &GrepArgs) -> Result<Option<Vec<String>>, String> {
+    let mut command = build_rg_command(root, args);
+    command.arg("--files-with-matches");
+    command.arg("--null");
+    command.arg(".");
+
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to execute rg: {err}")),
+    };
+
+    match output.status.code() {
+        Some(0) | Some(1) => {
+            let mut paths = output
+                .stdout
+                .split(|byte| *byte == b'\0')
+                .filter(|path| !path.is_empty())
+                .map(|path| String::from_utf8_lossy(path).into_owned())
+                .map(|path| normalize_rg_path(&path))
+                .collect::<Vec<_>>();
+            paths.sort();
+            Ok(Some(paths))
+        }
+        Some(code) => Err(format!(
+            "rg failed with exit code {code}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )),
+        None => Err("rg terminated by signal".to_string()),
+    }
+}
+
 fn run_rg_search(root: &Path, args: &GrepArgs) -> Result<Option<std::process::Output>, String> {
-    let mut command = Command::new("rg");
-    command.current_dir(root);
+    let mut command = build_rg_command(root, args);
     command.arg("--json");
     command.arg("--line-number");
     command.arg("--with-filename");
     command.arg("--color").arg("never");
     command.arg("--no-heading");
+    command.arg(".");
+
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to execute rg: {err}")),
+    };
+
+    match output.status.code() {
+        Some(0) | Some(1) => Ok(Some(output)),
+        Some(code) => Err(format!(
+            "rg failed with exit code {code}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )),
+        None => Err("rg terminated by signal".to_string()),
+    }
+}
+
+fn build_rg_command(root: &Path, args: &GrepArgs) -> Command {
+    let mut command = Command::new("rg");
+    command.current_dir(root);
 
     if args.regex {
         command.arg("-e").arg(&args.query);
@@ -244,22 +298,7 @@ fn run_rg_search(root: &Path, args: &GrepArgs) -> Result<Option<std::process::Ou
         command.arg("-g").arg(format!("*.{ext}"));
     }
 
-    command.arg(".");
-
-    let output = match command.output() {
-        Ok(output) => output,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(format!("failed to execute rg: {err}")),
-    };
-
-    match output.status.code() {
-        Some(0) | Some(1) => Ok(Some(output)),
-        Some(code) => Err(format!(
-            "rg failed with exit code {code}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )),
-        None => Err("rg terminated by signal".to_string()),
-    }
+    command
 }
 
 fn parse_rg_json(stdout: &[u8]) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
