@@ -3,7 +3,7 @@ use crate::structure::{StructureItem, extract_file_structure};
 use crate::workspace::{SearchScope, collect_file_entries, read_text_file};
 use regex::Regex;
 use serde::Serialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 use std::thread;
@@ -154,11 +154,7 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
         }));
     }
 
-    let Some(output) = run_rg_search(root, args)? else {
-        return Ok(None);
-    };
-
-    let match_map = parse_rg_json(&output.stdout)?;
+    let match_map = run_rg_match_map(root, args)?;
     let matched_files = match_map.into_iter().collect::<Vec<_>>();
     let worker_count = thread::available_parallelism()
         .map(|parallelism| parallelism.get())
@@ -248,7 +244,53 @@ fn run_rg_paths_only(root: &Path, args: &GrepArgs) -> Result<Option<Vec<String>>
     }
 }
 
-fn run_rg_search(root: &Path, args: &GrepArgs) -> Result<Option<std::process::Output>, String> {
+fn run_rg_match_map(
+    root: &Path,
+    args: &GrepArgs,
+) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
+    #[cfg(windows)]
+    {
+        let Some(output) = run_rg_json_search(root, args)? else {
+            return Ok(BTreeMap::new());
+        };
+        return parse_rg_json(&output.stdout);
+    }
+
+    #[cfg(not(windows))]
+    {
+        if let Some(output) = run_rg_plain_search(root, args)? {
+            match parse_rg_plain(&output.stdout) {
+                Ok(match_map) => return Ok(match_map),
+                Err(_) => {
+                    let Some(json_output) = run_rg_json_search(root, args)? else {
+                        return Ok(BTreeMap::new());
+                    };
+                    return parse_rg_json(&json_output.stdout);
+                }
+            }
+        }
+        Ok(BTreeMap::new())
+    }
+}
+
+fn run_rg_plain_search(
+    root: &Path,
+    args: &GrepArgs,
+) -> Result<Option<std::process::Output>, String> {
+    let mut command = build_rg_command(root, args);
+    command.arg("--line-number");
+    command.arg("--column");
+    command.arg("--with-filename");
+    command.arg("--color").arg("never");
+    command.arg("--no-heading");
+    command.arg(".");
+    run_rg_output(command)
+}
+
+fn run_rg_json_search(
+    root: &Path,
+    args: &GrepArgs,
+) -> Result<Option<std::process::Output>, String> {
     let mut command = build_rg_command(root, args);
     command.arg("--json");
     command.arg("--line-number");
@@ -256,7 +298,10 @@ fn run_rg_search(root: &Path, args: &GrepArgs) -> Result<Option<std::process::Ou
     command.arg("--color").arg("never");
     command.arg("--no-heading");
     command.arg(".");
+    run_rg_output(command)
+}
 
+fn run_rg_output(mut command: Command) -> Result<Option<std::process::Output>, String> {
     let output = match command.output() {
         Ok(output) => output,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -299,6 +344,43 @@ fn build_rg_command(root: &Path, args: &GrepArgs) -> Command {
     }
 
     command
+}
+
+fn parse_rg_plain(stdout: &[u8]) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
+    let text = std::str::from_utf8(stdout)
+        .map_err(|err| format!("failed to decode rg plain output as UTF-8: {err}"))?;
+    let mut matches_by_path: BTreeMap<String, Vec<LineMatch>> = BTreeMap::new();
+
+    for line in text.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.splitn(4, ':');
+        let Some(path) = parts.next() else {
+            continue;
+        };
+        let Some(line_number) = parts.next() else {
+            return Err("rg plain output did not include line numbers".to_string());
+        };
+        let Some(_column) = parts.next() else {
+            return Err("rg plain output did not include columns".to_string());
+        };
+        let Some(line_text) = parts.next() else {
+            return Err("rg plain output did not include line text".to_string());
+        };
+        let line_number = line_number
+            .parse::<usize>()
+            .map_err(|err| format!("failed to parse rg line number: {err}"))?;
+        matches_by_path
+            .entry(normalize_rg_path(path))
+            .or_default()
+            .push(LineMatch {
+                line_number,
+                line_text: line_text.to_string(),
+            });
+    }
+
+    Ok(matches_by_path)
 }
 
 fn parse_rg_json(stdout: &[u8]) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
@@ -452,19 +534,26 @@ struct GroupingResult {
 }
 
 fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResult {
-    let mut grouped_matches: BTreeMap<usize, Vec<LineMatch>> = BTreeMap::new();
-    let mut matched_indices = HashSet::new();
+    let mut grouped_matches = vec![Vec::new(); items.len()];
+    let mut matched_indices = vec![false; items.len()];
+    let mut matched_symbol_count = 0;
     let mut file_scope_matches = Vec::new();
+    let mut item_idx = 0usize;
 
     for line_match in matches {
-        if let Some((idx, _item)) = items.iter().enumerate().find(|(_, item)| {
-            item.start_line <= line_match.line_number && line_match.line_number <= item.end_line
-        }) {
-            matched_indices.insert(idx);
-            grouped_matches
-                .entry(idx)
-                .or_default()
-                .push(line_match.clone());
+        while item_idx < items.len() && items[item_idx].end_line < line_match.line_number {
+            item_idx += 1;
+        }
+
+        if let Some(item) = items.get(item_idx)
+            && item.start_line <= line_match.line_number
+            && line_match.line_number <= item.end_line
+        {
+            if !matched_indices[item_idx] {
+                matched_indices[item_idx] = true;
+                matched_symbol_count += 1;
+            }
+            grouped_matches[item_idx].push(line_match.clone());
         } else {
             file_scope_matches.push(line_match.clone());
         }
@@ -482,22 +571,22 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
     }
 
     for (idx, item) in items.iter().enumerate() {
-        let Some(matches) = grouped_matches.remove(&idx) else {
+        if grouped_matches[idx].is_empty() {
             continue;
-        };
+        }
         groups.push(MatchGroup {
             kind: item.kind.clone(),
             label: item.label.clone(),
             start_line: Some(item.start_line),
             end_line: Some(item.end_line),
-            matches,
+            matches: std::mem::take(&mut grouped_matches[idx]),
         });
     }
 
     let mut other_symbols = Vec::new();
     let mut other_symbols_omitted_count = 0;
     for (idx, item) in items.iter().enumerate() {
-        if matched_indices.contains(&idx) {
+        if matched_indices[idx] {
             continue;
         }
         if other_symbols.len() < OTHER_SYMBOLS_LIMIT {
@@ -509,7 +598,7 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
 
     GroupingResult {
         groups,
-        matched_symbol_count: matched_indices.len(),
+        matched_symbol_count,
         other_symbols,
         other_symbols_omitted_count,
     }
@@ -643,5 +732,16 @@ mod tests {
         assert_eq!(file.groups.len(), 1);
         assert_eq!(file.groups[0].label, "<file scope>");
         assert_eq!(file.groups[0].matches[0].line_number, 1);
+    }
+
+    #[test]
+    fn parse_rg_plain_groups_matches_by_file() {
+        let stdout = b"src/main.rs:12:3:spin_lock();\nsrc/main.rs:14:7:mutex_lock();\nREADME.md:2:1:spin_lock overview\n";
+        let parsed = parse_rg_plain(stdout).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed["src/main.rs"].len(), 2);
+        assert_eq!(parsed["src/main.rs"][0].line_number, 12);
+        assert_eq!(parsed["src/main.rs"][1].line_text, "mutex_lock();");
+        assert_eq!(parsed["README.md"][0].line_number, 2);
     }
 }
