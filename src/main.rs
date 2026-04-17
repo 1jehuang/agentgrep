@@ -25,7 +25,8 @@ fn main() {
                     if args.json {
                         println!(
                             "{}",
-                            serde_json::to_string_pretty(&result).expect("serialize grep json")
+                            serde_json::to_string_pretty(&result.to_json())
+                                .expect("serialize grep json")
                         );
                     } else if args.paths_only {
                         for file in result.files {
@@ -58,7 +59,7 @@ fn main() {
                                     ),
                                     _ => println!("    - {}", group.label),
                                 }
-                                for line_match in group.matches {
+                                for line_match in group.resolved_matches(&file.matches) {
                                     println!(
                                         "      - @ {} {}",
                                         line_match.line_number, line_match.line_text

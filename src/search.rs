@@ -10,7 +10,7 @@ use std::thread;
 
 const OTHER_SYMBOLS_LIMIT: usize = 4;
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrepResult {
     pub query: String,
     pub regex: bool,
@@ -20,7 +20,7 @@ pub struct GrepResult {
     pub total_matches: usize,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileMatches {
     pub path: String,
     pub language: String,
@@ -39,13 +39,102 @@ pub struct LineMatch {
     pub line_text: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchGroup {
     pub kind: String,
     pub label: String,
     pub start_line: Option<usize>,
     pub end_line: Option<usize>,
+    match_indices: Vec<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GrepResultJson {
+    pub query: String,
+    pub regex: bool,
+    pub root: String,
+    pub files: Vec<FileMatchesJson>,
+    pub total_files: usize,
+    pub total_matches: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FileMatchesJson {
+    pub path: String,
+    pub language: String,
+    pub role: String,
     pub matches: Vec<LineMatch>,
+    pub groups: Vec<MatchGroupJson>,
+    pub total_symbols: usize,
+    pub matched_symbol_count: usize,
+    pub other_symbols: Vec<StructureItem>,
+    pub other_symbols_omitted_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct MatchGroupJson {
+    pub kind: String,
+    pub label: String,
+    pub start_line: Option<usize>,
+    pub end_line: Option<usize>,
+    pub matches: Vec<LineMatch>,
+}
+
+impl GrepResult {
+    pub fn to_json(&self) -> GrepResultJson {
+        GrepResultJson {
+            query: self.query.clone(),
+            regex: self.regex,
+            root: self.root.clone(),
+            files: self.files.iter().map(FileMatches::to_json).collect(),
+            total_files: self.total_files,
+            total_matches: self.total_matches,
+        }
+    }
+}
+
+impl FileMatches {
+    fn to_json(&self) -> FileMatchesJson {
+        FileMatchesJson {
+            path: self.path.clone(),
+            language: self.language.clone(),
+            role: self.role.clone(),
+            matches: self.matches.clone(),
+            groups: self
+                .groups
+                .iter()
+                .map(|group| group.to_json(&self.matches))
+                .collect(),
+            total_symbols: self.total_symbols,
+            matched_symbol_count: self.matched_symbol_count,
+            other_symbols: self.other_symbols.clone(),
+            other_symbols_omitted_count: self.other_symbols_omitted_count,
+        }
+    }
+}
+
+impl MatchGroup {
+    pub fn resolved_matches<'a>(
+        &'a self,
+        matches: &'a [LineMatch],
+    ) -> impl Iterator<Item = &'a LineMatch> + 'a {
+        self.match_indices.iter().map(move |&idx| &matches[idx])
+    }
+
+    fn to_json(&self, matches: &[LineMatch]) -> MatchGroupJson {
+        MatchGroupJson {
+            kind: self.kind.clone(),
+            label: self.label.clone(),
+            start_line: self.start_line,
+            end_line: self.end_line,
+            matches: self.resolved_matches(matches).cloned().collect(),
+        }
+    }
+
+    #[cfg(test)]
+    fn match_count(&self) -> usize {
+        self.match_indices.len()
+    }
 }
 
 pub fn run_grep(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
@@ -539,7 +628,7 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
     let mut file_scope_matches = Vec::new();
     let mut item_idx = 0usize;
 
-    for line_match in matches {
+    for (match_idx, line_match) in matches.iter().enumerate() {
         while item_idx < items.len() && items[item_idx].end_line < line_match.line_number {
             item_idx += 1;
         }
@@ -555,13 +644,13 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
                     label: item.label.clone(),
                     start_line: Some(item.start_line),
                     end_line: Some(item.end_line),
-                    matches: vec![line_match.clone()],
+                    match_indices: vec![match_idx],
                 });
             } else if let Some(group) = symbol_groups.last_mut() {
-                group.matches.push(line_match.clone());
+                group.match_indices.push(match_idx);
             }
         } else {
-            file_scope_matches.push(line_match.clone());
+            file_scope_matches.push(match_idx);
         }
     }
 
@@ -572,7 +661,7 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
             label: "<file scope>".to_string(),
             start_line: None,
             end_line: None,
-            matches: file_scope_matches,
+            match_indices: file_scope_matches,
         });
     }
     groups.extend(symbol_groups);
@@ -708,9 +797,9 @@ mod tests {
         assert_eq!(file.matched_symbol_count, 2);
         assert_eq!(file.groups.len(), 2);
         assert_eq!(file.groups[0].label, "render_status_bar");
-        assert_eq!(file.groups[0].matches.len(), 2);
+        assert_eq!(file.groups[0].match_count(), 2);
         assert_eq!(file.groups[1].label, "auth_status");
-        assert_eq!(file.groups[1].matches.len(), 2);
+        assert_eq!(file.groups[1].match_count(), 2);
         assert_eq!(file.other_symbols.len(), 1);
         assert_eq!(file.other_symbols[0].label, "draw_header");
     }
@@ -728,7 +817,7 @@ mod tests {
         let file = &result.files[0];
         assert_eq!(file.groups.len(), 1);
         assert_eq!(file.groups[0].label, "<file scope>");
-        assert_eq!(file.groups[0].matches[0].line_number, 1);
+        assert_eq!(file.groups[0].resolved_matches(&file.matches).next().unwrap().line_number, 1);
     }
 
     #[test]

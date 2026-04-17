@@ -109,7 +109,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
         }
         let structure = extract_file_structure(&file.path, &file.relative_path, &file.text);
         let lower_lines = collect_lower_lines(&file.text);
-        let subject_mentions = find_lines(&lower_lines, &subject_lower);
+        let subject_mentions = count_lines(&lower_lines, &subject_lower);
 
         let relation_hits = relation_terms
             .iter()
@@ -130,7 +130,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
 
         let mut file_score = 0;
         let mut why = vec!["exact subject match or symbol hit".to_string()];
-        file_score += (subject_mentions.len() as i32) * 5;
+        file_score += (subject_mentions as i32) * 5;
         if exact_subject_path_match(&relative_lower, &subject_lower) {
             file_score += match query.relation {
                 Relation::Defined | Relation::Implementation => 140,
@@ -277,21 +277,26 @@ fn build_regions(
         let region_lines = &lines[start_idx..end_idx];
         let region_lower = &lower_lines[start_idx..end_idx];
 
-        let subject_line_hits = region_lower
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, line)| line.contains(subject_lower).then_some(idx))
-            .collect::<Vec<_>>();
+        let mut subject_line_hit_count = 0;
+        let mut first_subject_hit = None;
+        for (idx, line) in region_lower.iter().enumerate() {
+            if line.contains(subject_lower) {
+                subject_line_hit_count += 1;
+                if first_subject_hit.is_none() {
+                    first_subject_hit = Some(idx);
+                }
+            }
+        }
         let item_label_lower = item.label.to_ascii_lowercase();
         let exact_label_match = exact_subject_label_match(&item.label, subject_lower);
         let token_label_match = subject_tokens_match_label(&item.label, subject_tokens);
-        if subject_line_hits.is_empty() && !exact_label_match && !token_label_match {
+        if subject_line_hit_count == 0 && !exact_label_match && !token_label_match {
             continue;
         }
 
-        let mut score = 80 + (subject_line_hits.len() as i32 * 10);
+        let mut score = 80 + (subject_line_hit_count as i32 * 10);
         let mut why = Vec::new();
-        if !subject_line_hits.is_empty() {
+        if subject_line_hit_count > 0 {
             why.push("exact subject match".to_string());
         }
         let relation_hit = relation_terms.iter().any(|term| {
@@ -321,9 +326,8 @@ fn build_regions(
             score -= 50;
             why.push("non-owner penalty".to_string());
         }
-        let region_text = region_lines.join("\n");
         if owner_match && matches!(relation, Relation::Defined | Relation::Implementation) {
-            if region_text.trim_start().starts_with("pub ") {
+            if region_starts_with_pub(region_lines) {
                 score += 20;
                 why.push("public owner bonus".to_string());
             }
@@ -342,12 +346,12 @@ fn build_regions(
             _ => {}
         }
 
-        if is_test_like(item, &region_text) {
+        if is_test_like(item, region_lines) {
             score -= 60;
             why.push("test/example penalty".to_string());
         }
-        let representative_line = if let Some(first_match_idx) = subject_line_hits.first() {
-            region_lines[*first_match_idx]
+        let representative_line = if let Some(first_match_idx) = first_subject_hit {
+            region_lines[first_match_idx]
         } else {
             region_lines[0]
         };
@@ -360,8 +364,8 @@ fn build_regions(
             why.push("cli/example penalty".to_string());
         }
 
-        let match_line_number = if let Some(first_match_idx) = subject_line_hits.first() {
-            item.start_line + *first_match_idx
+        let match_line_number = if let Some(first_match_idx) = first_subject_hit {
+            item.start_line + first_match_idx
         } else {
             item.start_line
         };
@@ -583,12 +587,11 @@ fn collect_lower_lines(text: &str) -> Vec<String> {
     text.lines().map(|line| line.to_ascii_lowercase()).collect()
 }
 
-fn find_lines(lower_lines: &[String], needle: &str) -> Vec<usize> {
+fn count_lines(lower_lines: &[String], needle: &str) -> usize {
     lower_lines
         .iter()
-        .enumerate()
-        .filter_map(|(idx, line)| line.contains(needle).then_some(idx + 1))
-        .collect()
+        .filter(|line| line.contains(needle))
+        .count()
 }
 
 fn file_may_contain_subject(
@@ -635,12 +638,22 @@ fn extract_region(lines: &[&str], start_line: usize, end_line: usize) -> String 
     lines[start_line.saturating_sub(1)..end_line.min(lines.len())].join("\n")
 }
 
-fn is_test_like(item: &StructureItem, region_text: &str) -> bool {
+fn region_starts_with_pub(region_lines: &[&str]) -> bool {
+    region_lines
+        .iter()
+        .find_map(|line| {
+            let trimmed = line.trim_start();
+            (!trimmed.is_empty()).then_some(trimmed)
+        })
+        .is_some_and(|line| line.starts_with("pub "))
+}
+
+fn is_test_like(item: &StructureItem, region_lines: &[&str]) -> bool {
     let label = item.label.to_ascii_lowercase();
     label.contains("test")
-        || region_text.contains("#[test]")
-        || region_text.contains("assert_eq!")
-        || region_text.contains("unwrap_err()")
+        || region_lines.iter().any(|line| {
+            line.contains("#[test]") || line.contains("assert_eq!") || line.contains("unwrap_err()")
+        })
 }
 
 fn looks_like_string_fixture(line: &str) -> bool {
