@@ -9,6 +9,10 @@ use std::process::Command;
 use std::thread;
 
 const OTHER_SYMBOLS_LIMIT: usize = 4;
+const DENSE_MATCH_LIMITED_GROUPING_THRESHOLD: usize = 12;
+const DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD: usize = 24;
+const DENSE_GROUPS_LIMIT: usize = 8;
+const DENSE_OTHER_SYMBOLS_LIMIT: usize = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrepResult {
@@ -518,6 +522,10 @@ fn process_rg_match_file(
     matches: Vec<LineMatch>,
 ) -> Option<FileMatches> {
     let absolute_path = root.join(&path);
+    if matches.len() >= DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD {
+        return Some(build_dense_file_matches(path, &absolute_path, matches));
+    }
+
     let text = read_text_file(&absolute_path)?;
     let structure = extract_file_structure(&absolute_path, &path, &text);
     let grouping = group_matches(&structure.items, &matches);
@@ -570,6 +578,10 @@ fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option
         return None;
     }
 
+    if matches.len() >= DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD {
+        return Some(build_dense_file_matches(entry.relative_path, &entry.path, matches));
+    }
+
     let structure = extract_file_structure(&entry.path, &entry.relative_path, &text);
     let grouping = group_matches(&structure.items, &matches);
 
@@ -584,6 +596,38 @@ fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option
         other_symbols: grouping.other_symbols,
         other_symbols_omitted_count: grouping.other_symbols_omitted_count,
     })
+}
+
+fn build_dense_file_matches(path: String, absolute_path: &Path, matches: Vec<LineMatch>) -> FileMatches {
+    FileMatches {
+        language: infer_language(absolute_path),
+        role: crate::structure::infer_role(&path),
+        path,
+        groups: vec![file_scope_group((0..matches.len()).collect())],
+        matches,
+        total_symbols: 0,
+        matched_symbol_count: 0,
+        other_symbols: Vec::new(),
+        other_symbols_omitted_count: 0,
+    }
+}
+
+fn infer_language(path: &Path) -> String {
+    match path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+    {
+        "rs" => "rust",
+        "ts" | "tsx" => "typescript",
+        "js" | "jsx" => "javascript",
+        "py" => "python",
+        "md" => "markdown",
+        "json" => "json",
+        "yaml" | "yml" => "yaml",
+        _ => "text",
+    }
+    .to_string()
 }
 
 #[derive(Clone)]
@@ -623,10 +667,36 @@ struct GroupingResult {
 }
 
 fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResult {
+    let options = if matches.len() >= DENSE_MATCH_LIMITED_GROUPING_THRESHOLD {
+        GroupingOptions {
+            max_groups: DENSE_GROUPS_LIMIT,
+            other_symbols_limit: DENSE_OTHER_SYMBOLS_LIMIT,
+        }
+    } else {
+        GroupingOptions {
+            max_groups: usize::MAX,
+            other_symbols_limit: OTHER_SYMBOLS_LIMIT,
+        }
+    };
+
+    group_matches_with_options(items, matches, options)
+}
+
+struct GroupingOptions {
+    max_groups: usize,
+    other_symbols_limit: usize,
+}
+
+fn group_matches_with_options(
+    items: &[StructureItem],
+    matches: &[LineMatch],
+    options: GroupingOptions,
+) -> GroupingResult {
     let mut symbol_groups = Vec::new();
     let mut matched_indices = Vec::new();
     let mut file_scope_matches = Vec::new();
     let mut item_idx = 0usize;
+    let mut last_grouped_item_idx = None;
 
     for (match_idx, line_match) in matches.iter().enumerate() {
         while item_idx < items.len() && items[item_idx].end_line < line_match.line_number {
@@ -639,15 +709,24 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
         {
             if matched_indices.last().copied() != Some(item_idx) {
                 matched_indices.push(item_idx);
-                symbol_groups.push(MatchGroup {
-                    kind: item.kind.clone(),
-                    label: item.label.clone(),
-                    start_line: Some(item.start_line),
-                    end_line: Some(item.end_line),
-                    match_indices: vec![match_idx],
-                });
-            } else if let Some(group) = symbol_groups.last_mut() {
+                if symbol_groups.len() < options.max_groups {
+                    symbol_groups.push(MatchGroup {
+                        kind: item.kind.clone(),
+                        label: item.label.clone(),
+                        start_line: Some(item.start_line),
+                        end_line: Some(item.end_line),
+                        match_indices: vec![match_idx],
+                    });
+                    last_grouped_item_idx = Some(item_idx);
+                } else {
+                    file_scope_matches.push(match_idx);
+                    last_grouped_item_idx = None;
+                }
+            } else if last_grouped_item_idx == Some(item_idx) {
+                let group = symbol_groups.last_mut().expect("group exists for grouped symbol");
                 group.match_indices.push(match_idx);
+            } else {
+                file_scope_matches.push(match_idx);
             }
         } else {
             file_scope_matches.push(match_idx);
@@ -675,7 +754,7 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
             matched_iter.next();
             continue;
         }
-        if other_symbols.len() < OTHER_SYMBOLS_LIMIT {
+        if other_symbols.len() < options.other_symbols_limit {
             other_symbols.push(item.clone());
         } else {
             other_symbols_omitted_count += 1;
@@ -687,6 +766,16 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
         groups,
         other_symbols,
         other_symbols_omitted_count,
+    }
+}
+
+fn file_scope_group(match_indices: Vec<usize>) -> MatchGroup {
+    MatchGroup {
+        kind: "file-scope".to_string(),
+        label: "<file scope>".to_string(),
+        start_line: None,
+        end_line: None,
+        match_indices,
     }
 }
 
@@ -818,6 +907,41 @@ mod tests {
         assert_eq!(file.groups.len(), 1);
         assert_eq!(file.groups[0].label, "<file scope>");
         assert_eq!(file.groups[0].resolved_matches(&file.matches).next().unwrap().line_number, 1);
+    }
+
+    #[test]
+    fn dense_grep_skips_structure_extraction_and_uses_file_scope_group() {
+        let dir = tempdir().unwrap();
+        let mut text = String::new();
+        for idx in 0..DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD {
+            text.push_str(&format!("pub fn item_{idx}() {{}}\n"));
+        }
+        fs::write(dir.path().join("dense.rs"), text).unwrap();
+
+        let result = run_grep(dir.path(), &grep_args("pub")).unwrap();
+        let file = &result.files[0];
+        assert_eq!(file.language, "rust");
+        assert_eq!(file.total_symbols, 0);
+        assert_eq!(file.matched_symbol_count, 0);
+        assert_eq!(file.groups.len(), 1);
+        assert_eq!(file.groups[0].label, "<file scope>");
+        assert_eq!(file.groups[0].match_count(), DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD);
+    }
+
+    #[test]
+    fn dense_grep_caps_group_count_for_moderately_dense_files() {
+        let dir = tempdir().unwrap();
+        let mut text = String::new();
+        for idx in 0..(DENSE_MATCH_LIMITED_GROUPING_THRESHOLD + 4) {
+            text.push_str(&format!("fn auth_match_{idx}() {{ auth_status(); }}\n"));
+        }
+        fs::write(dir.path().join("moderate.rs"), text).unwrap();
+
+        let result = run_grep(dir.path(), &grep_args("auth_status")).unwrap();
+        let file = &result.files[0];
+        assert!(file.total_symbols >= DENSE_MATCH_LIMITED_GROUPING_THRESHOLD);
+        assert!(file.groups.len() <= DENSE_GROUPS_LIMIT + 1);
+        assert_eq!(file.groups[0].label, "<file scope>");
     }
 
     #[test]
