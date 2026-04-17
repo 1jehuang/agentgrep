@@ -76,7 +76,10 @@ pub fn read_text_file(path: &Path) -> Option<String> {
         return None;
     }
 
-    Some(String::from_utf8_lossy(&bytes).into_owned())
+    match String::from_utf8(bytes) {
+        Ok(text) => Some(text),
+        Err(err) => Some(String::from_utf8_lossy(err.as_bytes()).into_owned()),
+    }
 }
 
 pub fn collect_text_files(scope: &SearchScope<'_>) -> Vec<TextFile> {

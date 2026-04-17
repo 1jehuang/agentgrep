@@ -534,9 +534,8 @@ struct GroupingResult {
 }
 
 fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResult {
-    let mut grouped_matches = vec![Vec::new(); items.len()];
-    let mut matched_indices = vec![false; items.len()];
-    let mut matched_symbol_count = 0;
+    let mut symbol_groups = Vec::new();
+    let mut matched_indices = Vec::new();
     let mut file_scope_matches = Vec::new();
     let mut item_idx = 0usize;
 
@@ -549,17 +548,24 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
             && item.start_line <= line_match.line_number
             && line_match.line_number <= item.end_line
         {
-            if !matched_indices[item_idx] {
-                matched_indices[item_idx] = true;
-                matched_symbol_count += 1;
+            if matched_indices.last().copied() != Some(item_idx) {
+                matched_indices.push(item_idx);
+                symbol_groups.push(MatchGroup {
+                    kind: item.kind.clone(),
+                    label: item.label.clone(),
+                    start_line: Some(item.start_line),
+                    end_line: Some(item.end_line),
+                    matches: vec![line_match.clone()],
+                });
+            } else if let Some(group) = symbol_groups.last_mut() {
+                group.matches.push(line_match.clone());
             }
-            grouped_matches[item_idx].push(line_match.clone());
         } else {
             file_scope_matches.push(line_match.clone());
         }
     }
 
-    let mut groups = Vec::new();
+    let mut groups = Vec::with_capacity(symbol_groups.len() + usize::from(!file_scope_matches.is_empty()));
     if !file_scope_matches.is_empty() {
         groups.push(MatchGroup {
             kind: "file-scope".to_string(),
@@ -569,24 +575,15 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
             matches: file_scope_matches,
         });
     }
+    groups.extend(symbol_groups);
 
-    for (idx, item) in items.iter().enumerate() {
-        if grouped_matches[idx].is_empty() {
-            continue;
-        }
-        groups.push(MatchGroup {
-            kind: item.kind.clone(),
-            label: item.label.clone(),
-            start_line: Some(item.start_line),
-            end_line: Some(item.end_line),
-            matches: std::mem::take(&mut grouped_matches[idx]),
-        });
-    }
-
+    let matched_symbol_count = matched_indices.len();
     let mut other_symbols = Vec::new();
     let mut other_symbols_omitted_count = 0;
+    let mut matched_iter = matched_indices.into_iter().peekable();
     for (idx, item) in items.iter().enumerate() {
-        if matched_indices[idx] {
+        if matched_iter.peek().copied() == Some(idx) {
+            matched_iter.next();
             continue;
         }
         if other_symbols.len() < OTHER_SYMBOLS_LIMIT {
@@ -597,8 +594,8 @@ fn group_matches(items: &[StructureItem], matches: &[LineMatch]) -> GroupingResu
     }
 
     GroupingResult {
-        groups,
         matched_symbol_count,
+        groups,
         other_symbols,
         other_symbols_omitted_count,
     }
