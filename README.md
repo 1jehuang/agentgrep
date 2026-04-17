@@ -144,6 +144,12 @@ src/auth/mod.rs
 - preserves exact matching lines
 - includes a compact hint of other structure in the file
 
+Performance note:
+
+- on large real trees, exact `grep` is now often near parity with `rg` for selective literal/regex searches
+- the remaining gap is mostly concentrated in dense low-selectivity workloads, where `agentgrep` still does extra output shaping work that plain `rg` does not
+- the latest release reduces that dense-file overhead with a fast path that skips expensive structure extraction when a file is clearly too match-heavy for rich grouping to be worthwhile
+
 ### 2. Ranked file discovery: `find`
 
 Use `find` when you know the topic but not the exact symbol.
