@@ -13,6 +13,8 @@ const DENSE_MATCH_LIMITED_GROUPING_THRESHOLD: usize = 12;
 const DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD: usize = 24;
 const DENSE_GROUPS_LIMIT: usize = 8;
 const DENSE_OTHER_SYMBOLS_LIMIT: usize = 2;
+const MAX_MATCH_LINE_CHARS: usize = 240;
+const MATCH_LINE_PREFIX_CONTEXT_CHARS: usize = 80;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrepResult {
@@ -341,24 +343,25 @@ fn run_rg_match_map(
     root: &Path,
     args: &GrepArgs,
 ) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
+    let matcher = Matcher::new(&args.query, args.regex)?;
     #[cfg(windows)]
     {
         let Some(output) = run_rg_json_search(root, args)? else {
             return Ok(BTreeMap::new());
         };
-        return parse_rg_json(&output.stdout);
+        return parse_rg_json(&output.stdout, &matcher);
     }
 
     #[cfg(not(windows))]
     {
         if let Some(output) = run_rg_plain_search(root, args)? {
-            match parse_rg_plain(&output.stdout) {
+            match parse_rg_plain(&output.stdout, &matcher) {
                 Ok(match_map) => return Ok(match_map),
                 Err(_) => {
                     let Some(json_output) = run_rg_json_search(root, args)? else {
                         return Ok(BTreeMap::new());
                     };
-                    return parse_rg_json(&json_output.stdout);
+                    return parse_rg_json(&json_output.stdout, &matcher);
                 }
             }
         }
@@ -439,7 +442,10 @@ fn build_rg_command(root: &Path, args: &GrepArgs) -> Command {
     command
 }
 
-fn parse_rg_plain(stdout: &[u8]) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
+fn parse_rg_plain(
+    stdout: &[u8],
+    matcher: &Matcher,
+) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
     let text = std::str::from_utf8(stdout)
         .map_err(|err| format!("failed to decode rg plain output as UTF-8: {err}"))?;
     let mut matches_by_path: BTreeMap<String, Vec<LineMatch>> = BTreeMap::new();
@@ -469,14 +475,17 @@ fn parse_rg_plain(stdout: &[u8]) -> Result<BTreeMap<String, Vec<LineMatch>>, Str
             .or_default()
             .push(LineMatch {
                 line_number,
-                line_text: line_text.to_string(),
+                line_text: matcher.display_line_text(line_text),
             });
     }
 
     Ok(matches_by_path)
 }
 
-fn parse_rg_json(stdout: &[u8]) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
+fn parse_rg_json(
+    stdout: &[u8],
+    matcher: &Matcher,
+) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
     let mut matches_by_path: BTreeMap<String, Vec<LineMatch>> = BTreeMap::new();
 
     for line in stdout.split(|byte| *byte == b'\n') {
@@ -505,7 +514,7 @@ fn parse_rg_json(stdout: &[u8]) -> Result<BTreeMap<String, Vec<LineMatch>>, Stri
             .or_default()
             .push(LineMatch {
                 line_number,
-                line_text: line_text.trim_end_matches(['\n', '\r']).to_string(),
+                line_text: matcher.display_line_text(line_text.trim_end_matches(['\n', '\r'])),
             });
     }
 
@@ -569,7 +578,7 @@ fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option
         if matcher.is_match(line) {
             matches.push(LineMatch {
                 line_number: idx + 1,
-                line_text: line.to_string(),
+                line_text: matcher.display_line_text(line),
             });
         }
     }
@@ -579,7 +588,11 @@ fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option
     }
 
     if matches.len() >= DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD {
-        return Some(build_dense_file_matches(entry.relative_path, &entry.path, matches));
+        return Some(build_dense_file_matches(
+            entry.relative_path,
+            &entry.path,
+            matches,
+        ));
     }
 
     let structure = extract_file_structure(&entry.path, &entry.relative_path, &text);
@@ -598,7 +611,11 @@ fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option
     })
 }
 
-fn build_dense_file_matches(path: String, absolute_path: &Path, matches: Vec<LineMatch>) -> FileMatches {
+fn build_dense_file_matches(
+    path: String,
+    absolute_path: &Path,
+    matches: Vec<LineMatch>,
+) -> FileMatches {
     FileMatches {
         language: infer_language(absolute_path),
         role: crate::structure::infer_role(&path),
@@ -650,6 +667,60 @@ impl Matcher {
             MatcherKind::Literal(literal) => line.contains(literal),
             MatcherKind::Regex(regex) => regex.is_match(line),
         }
+    }
+
+    fn display_line_text(&self, line: &str) -> String {
+        compact_match_line(line, self.first_match_span(line))
+    }
+
+    fn first_match_span(&self, line: &str) -> Option<(usize, usize)> {
+        match &self.kind {
+            MatcherKind::Literal(literal) => line
+                .find(literal)
+                .map(|start| (start, start.saturating_add(literal.len()))),
+            MatcherKind::Regex(regex) => regex.find(line).map(|found| (found.start(), found.end())),
+        }
+    }
+}
+
+fn compact_match_line(line: &str, match_span: Option<(usize, usize)>) -> String {
+    let char_count = line.chars().count();
+    if char_count <= MAX_MATCH_LINE_CHARS {
+        return line.to_string();
+    }
+
+    let (match_start, match_end) = match_span.unwrap_or((0, 0));
+    let match_start_char = line[..match_start.min(line.len())].chars().count();
+    let match_end_char = line[..match_end.min(line.len())].chars().count();
+    let match_len_chars = match_end_char.saturating_sub(match_start_char).max(1);
+
+    let start_char = match_start_char.saturating_sub(MATCH_LINE_PREFIX_CONTEXT_CHARS);
+    let mut end_char = start_char
+        .saturating_add(MAX_MATCH_LINE_CHARS)
+        .max(match_start_char.saturating_add(match_len_chars));
+    if end_char > char_count {
+        end_char = char_count;
+    }
+    let start_char = end_char
+        .saturating_sub(MAX_MATCH_LINE_CHARS)
+        .min(start_char);
+
+    let omitted_prefix = start_char;
+    let omitted_suffix = char_count.saturating_sub(end_char);
+    let snippet: String = line
+        .chars()
+        .skip(start_char)
+        .take(end_char.saturating_sub(start_char))
+        .collect();
+
+    match (omitted_prefix > 0, omitted_suffix > 0) {
+        (true, true) => format!(
+            "…{} … [truncated: {} chars before, {} chars after]",
+            snippet, omitted_prefix, omitted_suffix
+        ),
+        (true, false) => format!("…{} [truncated: {} chars before]", snippet, omitted_prefix),
+        (false, true) => format!("{} … [truncated: {} chars after]", snippet, omitted_suffix),
+        (false, false) => snippet,
     }
 }
 
@@ -723,7 +794,9 @@ fn group_matches_with_options(
                     last_grouped_item_idx = None;
                 }
             } else if last_grouped_item_idx == Some(item_idx) {
-                let group = symbol_groups.last_mut().expect("group exists for grouped symbol");
+                let group = symbol_groups
+                    .last_mut()
+                    .expect("group exists for grouped symbol");
                 group.match_indices.push(match_idx);
             } else {
                 file_scope_matches.push(match_idx);
@@ -733,7 +806,8 @@ fn group_matches_with_options(
         }
     }
 
-    let mut groups = Vec::with_capacity(symbol_groups.len() + usize::from(!file_scope_matches.is_empty()));
+    let mut groups =
+        Vec::with_capacity(symbol_groups.len() + usize::from(!file_scope_matches.is_empty()));
     if !file_scope_matches.is_empty() {
         groups.push(MatchGroup {
             kind: "file-scope".to_string(),
@@ -906,7 +980,14 @@ mod tests {
         let file = &result.files[0];
         assert_eq!(file.groups.len(), 1);
         assert_eq!(file.groups[0].label, "<file scope>");
-        assert_eq!(file.groups[0].resolved_matches(&file.matches).next().unwrap().line_number, 1);
+        assert_eq!(
+            file.groups[0]
+                .resolved_matches(&file.matches)
+                .next()
+                .unwrap()
+                .line_number,
+            1
+        );
     }
 
     #[test]
@@ -925,7 +1006,10 @@ mod tests {
         assert_eq!(file.matched_symbol_count, 0);
         assert_eq!(file.groups.len(), 1);
         assert_eq!(file.groups[0].label, "<file scope>");
-        assert_eq!(file.groups[0].match_count(), DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD);
+        assert_eq!(
+            file.groups[0].match_count(),
+            DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD
+        );
     }
 
     #[test]
@@ -947,11 +1031,51 @@ mod tests {
     #[test]
     fn parse_rg_plain_groups_matches_by_file() {
         let stdout = b"src/main.rs:12:3:spin_lock();\nsrc/main.rs:14:7:mutex_lock();\nREADME.md:2:1:spin_lock overview\n";
-        let parsed = parse_rg_plain(stdout).unwrap();
+        let matcher = Matcher::new("lock", false).unwrap();
+        let parsed = parse_rg_plain(stdout, &matcher).unwrap();
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed["src/main.rs"].len(), 2);
         assert_eq!(parsed["src/main.rs"][0].line_number, 12);
         assert_eq!(parsed["src/main.rs"][1].line_text, "mutex_lock();");
         assert_eq!(parsed["README.md"][0].line_number, 2);
+    }
+
+    #[test]
+    fn grep_compacts_huge_json_or_transcript_lines_around_the_match() {
+        let dir = tempdir().unwrap();
+        let huge_line = format!(
+            "{{\"event\":\"tool_done\",\"output\":\"{}set_status_notice{}\"}}",
+            "a".repeat(900),
+            "b".repeat(900)
+        );
+        fs::write(dir.path().join("timeline.json"), huge_line).unwrap();
+
+        let result = run_grep(dir.path(), &grep_args("set_status_notice")).unwrap();
+        let line_text = &result.files[0].matches[0].line_text;
+
+        assert!(line_text.contains("set_status_notice"));
+        assert!(line_text.contains("[truncated:"), "{line_text}");
+        assert!(
+            line_text.chars().count() < 340,
+            "line excerpt should stay compact, got {} chars: {line_text}",
+            line_text.chars().count()
+        );
+    }
+
+    #[test]
+    fn rg_plain_parser_compacts_huge_lines_too() {
+        let matcher = Matcher::new("status_notice", false).unwrap();
+        let stdout = format!(
+            "assets/demo.json:1:100:{}status_notice{}\n",
+            "x".repeat(700),
+            "y".repeat(700)
+        );
+
+        let parsed = parse_rg_plain(stdout.as_bytes(), &matcher).unwrap();
+        let line_text = &parsed["assets/demo.json"][0].line_text;
+
+        assert!(line_text.contains("status_notice"));
+        assert!(line_text.contains("[truncated:"), "{line_text}");
+        assert!(line_text.chars().count() < 340);
     }
 }
