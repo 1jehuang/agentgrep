@@ -1,0 +1,62 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "act": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#act",
+      "source": "nixpkg"
+    },
+    "ast-grep": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#ast-grep",
+      "source": "nixpkg"
+    },
+    "cargo": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#cargo",
+      "source": "nixpkg"
+    },
+    "clippy": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#clippy",
+      "source": "nixpkg"
+    },
+    "devbox": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#devbox",
+      "source": "nixpkg"
+    },
+    "direnv": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#direnv",
+      "source": "nixpkg"
+    },
+    "gh": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#gh",
+      "source": "nixpkg"
+    },
+    "git": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#git",
+      "source": "nixpkg"
+    },
+    "github:NixOS/nixpkgs/nixpkgs-unstable": {
+      "last_modified": "2026-04-30T11:26:30Z",
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d?lastModified=1777548390"
+    },
+    "glab": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#glab",
+      "source": "nixpkg"
+    },
+    "just": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#just",
+      "source": "nixpkg"
+    },
+    "rust-analyzer": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#rust-analyzer",
+      "source": "nixpkg"
+    },
+    "rustc": {
+      "plugin_version": "0.0.1",
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#rustc",
+      "source": "nixpkg"
+    },
+    "rustfmt": {
+      "resolved": "github:NixOS/nixpkgs/7aaa00e7cc9be6c316cb5f6617bd740dd435c59d#rustfmt",
+      "source": "nixpkg"
+    }
+  }
+}
