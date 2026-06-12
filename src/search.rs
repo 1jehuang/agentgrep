@@ -249,7 +249,9 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
         }));
     }
 
-    let match_map = run_rg_match_map(root, args)?;
+    let Some(match_map) = run_rg_match_map(root, args)? else {
+        return Ok(None);
+    };
     let matched_files = match_map.into_iter().collect::<Vec<_>>();
     let worker_count = thread::available_parallelism()
         .map(|parallelism| parallelism.get())
@@ -342,30 +344,30 @@ fn run_rg_paths_only(root: &Path, args: &GrepArgs) -> Result<Option<Vec<String>>
 fn run_rg_match_map(
     root: &Path,
     args: &GrepArgs,
-) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
+) -> Result<Option<BTreeMap<String, Vec<LineMatch>>>, String> {
     let matcher = Matcher::new(&args.query, args.regex)?;
     #[cfg(windows)]
     {
         let Some(output) = run_rg_json_search(root, args)? else {
-            return Ok(BTreeMap::new());
+            return Ok(None);
         };
-        return parse_rg_json(&output.stdout, &matcher);
+        return parse_rg_json(&output.stdout, &matcher).map(Some);
     }
 
     #[cfg(not(windows))]
     {
         if let Some(output) = run_rg_plain_search(root, args)? {
             match parse_rg_plain(&output.stdout, &matcher) {
-                Ok(match_map) => return Ok(match_map),
+                Ok(match_map) => return Ok(Some(match_map)),
                 Err(_) => {
                     let Some(json_output) = run_rg_json_search(root, args)? else {
-                        return Ok(BTreeMap::new());
+                        return Ok(None);
                     };
-                    return parse_rg_json(&json_output.stdout, &matcher);
+                    return parse_rg_json(&json_output.stdout, &matcher).map(Some);
                 }
             }
         }
-        Ok(BTreeMap::new())
+        Ok(None)
     }
 }
 
@@ -892,6 +894,30 @@ mod tests {
         assert_eq!(result.files[0].matches[1].line_number, 2);
         assert_eq!(result.files[0].groups.len(), 1);
         assert_eq!(result.files[0].groups[0].label, "auth_status");
+    }
+
+    #[test]
+    fn grep_falls_back_to_native_when_rg_missing() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("a.rs"),
+            "fn auth_status() {}\nlet x = auth_status();\n",
+        )
+        .unwrap();
+
+        // Simulate an environment where rg is not on PATH.
+        let original_path = std::env::var_os("PATH");
+        unsafe { std::env::set_var("PATH", "") };
+        let result = run_grep(dir.path(), &grep_args("auth_status"));
+        match original_path {
+            Some(path) => unsafe { std::env::set_var("PATH", path) },
+            None => unsafe { std::env::remove_var("PATH") },
+        }
+
+        let result = result.unwrap();
+        assert_eq!(result.total_files, 1);
+        assert_eq!(result.total_matches, 2);
+        assert_eq!(result.files[0].path, "a.rs");
     }
 
     #[test]
