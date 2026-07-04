@@ -6,6 +6,8 @@ use crate::workspace::{SearchScope, TextFile, collect_file_entries, read_text_fi
 use serde::Serialize;
 use std::path::Path;
 
+const MAX_REGION_BODY_LINE_CHARS: usize = 240;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SmartResult {
     pub query: SmartQuery,
@@ -390,6 +392,7 @@ fn build_regions(
         } else {
             lines[match_line_number - 1].to_string()
         };
+        let body = compact_region_body(&body);
 
         regions.push(SmartRegion {
             kind,
@@ -636,6 +639,33 @@ fn should_include_full_region(item: &StructureItem, mode: FullRegionMode) -> boo
 
 fn extract_region(lines: &[&str], start_line: usize, end_line: usize) -> String {
     lines[start_line.saturating_sub(1)..end_line.min(lines.len())].join("\n")
+}
+
+/// Cap each body line so a single huge line (e.g. minified code) cannot
+/// flood the caller's context window.
+fn compact_region_body(body: &str) -> String {
+    if body
+        .lines()
+        .all(|line| line.chars().count() <= MAX_REGION_BODY_LINE_CHARS)
+    {
+        return body.to_string();
+    }
+    body.lines()
+        .map(|line| {
+            let char_count = line.chars().count();
+            if char_count <= MAX_REGION_BODY_LINE_CHARS {
+                line.to_string()
+            } else {
+                let snippet: String = line.chars().take(MAX_REGION_BODY_LINE_CHARS).collect();
+                format!(
+                    "{} … [truncated: {} chars after]",
+                    snippet,
+                    char_count - MAX_REGION_BODY_LINE_CHARS
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn region_starts_with_pub(region_lines: &[&str]) -> bool {
@@ -983,5 +1013,51 @@ mod tests {
                 .iter()
                 .any(|region| region.context_applied.is_some())
         );
+    }
+
+    #[test]
+    fn smart_region_bodies_cap_huge_single_lines() {
+        let dir = tempdir().unwrap();
+        let giant = "var x=1;".repeat(4000);
+        fs::write(
+            dir.path().join("minified.js"),
+            format!("function handle_auth() {{{giant}}}\n"),
+        )
+        .unwrap();
+
+        let query = SmartQuery {
+            subject: "handle_auth".to_string(),
+            relation: Relation::Defined,
+            support: vec![],
+            kind: None,
+            path_hint: None,
+        };
+        let args = SmartArgs {
+            terms: vec![],
+            json: false,
+            max_files: 5,
+            max_regions: 5,
+            full_region: FullRegionMode::Auto,
+            debug_plan: false,
+            debug_score: false,
+            paths_only: false,
+            path: None,
+            file_type: None,
+            glob: None,
+            hidden: false,
+            no_ignore: false,
+            context_json: None,
+        };
+
+        let result = run_smart(dir.path(), &query, &args).unwrap();
+        let region = &result.files[0].regions[0];
+        assert!(region.body.contains("[truncated:"), "{}", region.body);
+        for line in region.body.lines() {
+            assert!(
+                line.chars().count() < 340,
+                "region body line should be bounded, got {} chars",
+                line.chars().count()
+            );
+        }
     }
 }
