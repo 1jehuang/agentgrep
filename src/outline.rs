@@ -1,7 +1,9 @@
 use crate::cli::OutlineArgs;
 use crate::context::HarnessContext;
 use crate::structure::{StructureItem, extract_file_structure};
-use crate::workspace::{normalize_display_path, read_text_file};
+use crate::workspace::{
+    SearchScope, collect_file_entries, normalize_display_path, read_text_file,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -26,7 +28,7 @@ pub struct OutlineStructure {
 pub fn run_outline(root: &Path, args: &OutlineArgs) -> Result<OutlineResult, String> {
     let file_path = resolve_outline_path(root, &args.file);
     if !file_path.exists() {
-        return Err(format!("file not found: {}", file_path.display()));
+        return Err(file_not_found_error(root, &args.file, &file_path));
     }
     if !file_path.is_file() {
         return Err(format!("not a file: {}", file_path.display()));
@@ -85,6 +87,68 @@ fn resolve_outline_path(root: &Path, file: &str) -> PathBuf {
     }
 }
 
+fn file_not_found_error(root: &Path, requested: &str, resolved: &PathBuf) -> String {
+    let mut message = format!("file not found: {}", resolved.display());
+    let suggestions = suggest_similar_files(root, requested);
+    if !suggestions.is_empty() {
+        message.push_str("\n\ndid you mean:");
+        for suggestion in suggestions {
+            message.push_str("\n  ");
+            message.push_str(&suggestion);
+        }
+    }
+    message
+}
+
+/// Find workspace files whose name matches the requested file name so a
+/// mistyped or moved path yields actionable suggestions instead of a dead end.
+fn suggest_similar_files(root: &Path, requested: &str) -> Vec<String> {
+    const MAX_SUGGESTIONS: usize = 5;
+
+    let requested_name = Path::new(requested)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned());
+    let Some(requested_name) = requested_name else {
+        return Vec::new();
+    };
+    let requested_stem = Path::new(&requested_name)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_ascii_lowercase());
+
+    let scope = SearchScope {
+        root,
+        file_type: None,
+        glob: None,
+        hidden: false,
+        no_ignore: false,
+    };
+
+    let mut exact = Vec::new();
+    let mut stem_matches = Vec::new();
+    for entry in collect_file_entries(&scope) {
+        let Some(name) = entry.path.file_name().map(|n| n.to_string_lossy()) else {
+            continue;
+        };
+        if name == requested_name.as_str() {
+            exact.push(entry.relative_path.clone());
+        } else if let Some(requested_stem) = requested_stem.as_deref() {
+            let stem = Path::new(name.as_ref())
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().to_ascii_lowercase());
+            if stem.as_deref() == Some(requested_stem) {
+                stem_matches.push(entry.relative_path.clone());
+            }
+        }
+        if exact.len() >= MAX_SUGGESTIONS {
+            break;
+        }
+    }
+
+    exact.extend(stem_matches);
+    exact.truncate(MAX_SUGGESTIONS);
+    exact
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +184,29 @@ mod tests {
             .items
             .iter()
             .any(|item| item.label == "render_status_bar"));
+    }
+
+    #[test]
+    fn outline_missing_file_suggests_similar_paths() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("crates/core/src")).unwrap();
+        fs::write(dir.path().join("crates/core/src/dag.rs"), "fn one() {}\n").unwrap();
+
+        let args = OutlineArgs {
+            file: "crates/plan/src/dag.rs".to_string(),
+            json: false,
+            max_items: None,
+            path: None,
+            context_json: None,
+        };
+
+        let err = run_outline(dir.path(), &args).unwrap_err();
+        assert!(err.contains("file not found"), "unexpected error: {err}");
+        assert!(err.contains("did you mean"), "missing suggestions: {err}");
+        assert!(
+            err.contains("crates/core/src/dag.rs"),
+            "missing suggested path: {err}"
+        );
     }
 
     #[test]

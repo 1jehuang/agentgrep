@@ -424,7 +424,9 @@ fn build_rg_command(root: &Path, args: &GrepArgs) -> Command {
         command.arg("-e").arg(&args.query);
     } else {
         command.arg("--fixed-strings");
-        command.arg(&args.query);
+        // Pass the pattern via -e so queries starting with '-' (for example
+        // "--features") are not parsed as rg flags.
+        command.arg("-e").arg(&args.query);
     }
 
     if args.hidden {
@@ -657,7 +659,11 @@ struct Matcher {
 impl Matcher {
     fn new(query: &str, regex: bool) -> Result<Self, String> {
         let kind = if regex {
-            MatcherKind::Regex(Regex::new(query).map_err(|err| format!("invalid regex: {err}"))?)
+            MatcherKind::Regex(Regex::new(query).map_err(|err| {
+                format!(
+                    "invalid regex: {err}\n\nhint: omit regex=true (or escape special characters) to search for this text literally"
+                )
+            })?)
         } else {
             MatcherKind::Literal(query.to_string())
         };
@@ -930,6 +936,33 @@ mod tests {
 
         let result = run_grep(dir.path(), &args).unwrap();
         assert_eq!(result.total_matches, 2);
+    }
+
+    #[test]
+    fn literal_grep_query_starting_with_dash_is_not_treated_as_flag() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "cargo build --features full\nplain line\n",
+        )
+        .unwrap();
+
+        let result = run_grep(dir.path(), &grep_args("--features")).unwrap();
+        assert_eq!(result.total_matches, 1);
+        assert_eq!(result.files[0].path, "Cargo.toml");
+    }
+
+    #[test]
+    fn invalid_regex_error_suggests_literal_search() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.rs"), "todo_progress(\n").unwrap();
+
+        let mut args = grep_args("todo_progress(");
+        args.regex = true;
+
+        let err = run_grep(dir.path(), &args).unwrap_err();
+        assert!(err.contains("invalid regex"), "unexpected error: {err}");
+        assert!(err.contains("literally"), "missing hint: {err}");
     }
 
     #[test]
