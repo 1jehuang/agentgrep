@@ -129,6 +129,24 @@ displayed path cannot silently drop one. JSON output additionally carries a
 emitted by grep/find/trace round-trip. Internal file opens always use the
 native path bytes, never the display string.
 
+### Non-Unix (Windows) limitation
+
+Raw path bytes are only available on Unix, so the guarantees above are
+Unix-only. On non-Unix targets a filename that is not valid Unicode (for
+example a Windows name containing unpaired UTF-16 surrogates):
+
+- gets no `#b=` suffix and no `path_bytes` JSON field, so two such names whose
+  lossy display strings collide are not distinguished in output;
+- is still opened correctly by the native walker paths (find, trace, outline,
+  and native grep keep the real `PathBuf`), but the rg fast path rebuilds the
+  file path from the lossy display string, so such a file's matches may be
+  silently dropped (the rebuilt path does not exist) or, if a decoy file
+  literally named with U+FFFD exists, read from the wrong file.
+
+No mode panics on such names; degradation is display-level only. This is a
+known, accepted limitation until raw `OsStr` handling is wired up for
+Windows (WTF-8/WTF-16 round-tripping).
+
 ## Shared flags
 
 ### Output
