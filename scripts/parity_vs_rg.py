@@ -60,6 +60,11 @@ def agentgrep_matches(
     files: Set[str] = set()
     pairs: Set[Tuple[str, int]] = set()
     for f in doc.get("files", []):
+        if "path_bytes" in f:
+            # Non-UTF-8 filename: rg_matches skips these (rg emits them as
+            # bytes, not text), so skip symmetrically to stay comparable.
+            # The disambiguated display path is still unique per file.
+            continue
         rel = relpath(f["path"], corpus.path)
         files.add(rel)
         for m in f.get("matches", []):

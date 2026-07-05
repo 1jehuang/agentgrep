@@ -29,6 +29,9 @@ pub struct GrepResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileMatches {
     pub path: String,
+    /// Hex of the raw relative path bytes when the name is not valid UTF-8,
+    /// so consumers can address the real file. `None` otherwise.
+    pub path_bytes: Option<String>,
     pub language: String,
     pub role: String,
     pub matches: Vec<LineMatch>,
@@ -67,6 +70,9 @@ pub struct GrepResultJson {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FileMatchesJson {
     pub path: String,
+    /// Hex of the raw relative path bytes when the name is not valid UTF-8.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_bytes: Option<String>,
     pub language: String,
     pub role: String,
     pub matches: Vec<LineMatch>,
@@ -103,6 +109,7 @@ impl FileMatches {
     fn to_json(&self) -> FileMatchesJson {
         FileMatchesJson {
             path: self.path.clone(),
+            path_bytes: self.path_bytes.clone(),
             language: self.language.clone(),
             role: self.role.clone(),
             matches: self.matches.clone(),
@@ -208,6 +215,9 @@ fn run_grep_native(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
         }
     }
 
+    // Display paths are unique even for lossy-colliding non-UTF-8 names
+    // (disambiguate_display_path appends a byte-derived suffix), so this
+    // sort is total and portable.
     results.sort_by(|a, b| a.path.cmp(&b.path));
 
     Ok(GrepResult {
@@ -228,7 +238,8 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
         let files = paths
             .into_iter()
             .map(|path| FileMatches {
-                path,
+                path: path.display,
+                path_bytes: path.path_bytes,
                 language: String::new(),
                 role: String::new(),
                 matches: Vec::new(),
@@ -310,7 +321,15 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
     }))
 }
 
-fn run_rg_paths_only(root: &Path, args: &GrepArgs) -> Result<Option<Vec<String>>, String> {
+/// A displayable file path from `rg --files-with-matches`: a disambiguated
+/// display string plus optional hex-encoded raw bytes for non-UTF-8 names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RgDisplayPath {
+    display: String,
+    path_bytes: Option<String>,
+}
+
+fn run_rg_paths_only(root: &Path, args: &GrepArgs) -> Result<Option<Vec<RgDisplayPath>>, String> {
     let mut command = build_rg_command(root, args);
     command.arg("--files-with-matches");
     command.arg("--null");
@@ -339,14 +358,26 @@ fn run_rg_paths_only(root: &Path, args: &GrepArgs) -> Result<Option<Vec<String>>
         None => return Err("rg terminated by signal".to_string()),
     }
 
-    let mut paths = output
+    // Keep the raw bytes from rg's NUL-separated output: sort on them so tie
+    // order between lossy-colliding names is byte-deterministic, and derive
+    // the disambiguated display string plus hex bytes from them.
+    let mut raw_paths = output
         .stdout
         .split(|byte| *byte == b'\0')
         .filter(|path| !path.is_empty())
-        .map(|path| String::from_utf8_lossy(path).into_owned())
-        .map(|path| normalize_rg_path(&path))
+        .map(|path| path.strip_prefix(b"./".as_slice()).unwrap_or(path).to_vec())
         .collect::<Vec<_>>();
-    paths.sort();
+    raw_paths.sort();
+    let paths = raw_paths
+        .into_iter()
+        .map(|raw| {
+            let key = RgPathKey::from_bytes(&raw);
+            RgDisplayPath {
+                display: key.display_path(),
+                path_bytes: key.path_bytes_hex(),
+            }
+        })
+        .collect::<Vec<_>>();
     Ok(Some(paths))
 }
 
@@ -596,6 +627,28 @@ impl RgPathKey {
             root.join(&self.display)
         }
     }
+
+    /// True when the raw path bytes are not valid UTF-8, meaning `display`
+    /// is lossy and could collide with another file's display string.
+    fn is_lossy(&self) -> bool {
+        std::str::from_utf8(&self.raw).is_err()
+    }
+
+    /// Unique display path: the lossy string with a byte-derived suffix when
+    /// the raw bytes are not valid UTF-8 (see
+    /// [`crate::workspace::disambiguate_display_path`]).
+    fn display_path(&self) -> String {
+        crate::workspace::disambiguate_display_path(
+            &self.display,
+            self.is_lossy().then_some(self.raw.as_slice()),
+        )
+    }
+
+    /// Hex of the raw path bytes for JSON consumers, only for non-UTF-8 names.
+    fn path_bytes_hex(&self) -> Option<String> {
+        self.is_lossy()
+            .then(|| crate::workspace::path_bytes_hex(&self.raw))
+    }
 }
 
 /// Minimal standard-alphabet base64 decoder for rg's `{"bytes": ...}` JSON
@@ -649,16 +702,26 @@ fn process_rg_match_file(
     matches: Vec<LineMatch>,
 ) -> Option<FileMatches> {
     let absolute_path = path.to_absolute(root);
-    let path = path.display;
+    // Role/structure inference uses the plain lossy path; the emitted `path`
+    // is the disambiguated display path, unique across lossy collisions.
+    let lossy_path = path.display.clone();
+    let display_path = path.display_path();
+    let path_bytes = path.path_bytes_hex();
     if matches.len() >= DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD {
-        return Some(build_dense_file_matches(path, &absolute_path, matches));
+        return Some(build_dense_file_matches(
+            display_path,
+            path_bytes,
+            &absolute_path,
+            matches,
+        ));
     }
 
     let text = read_text_file(&absolute_path)?;
-    let structure = extract_file_structure(&absolute_path, &path, &text);
+    let structure = extract_file_structure(&absolute_path, &lossy_path, &text);
     let grouping = group_matches(&structure.items, &matches);
     Some(FileMatches {
-        path,
+        path: display_path,
+        path_bytes,
         language: structure.language,
         role: structure.role,
         matches,
@@ -719,7 +782,8 @@ fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option
 
     if matches.len() >= DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD {
         return Some(build_dense_file_matches(
-            entry.relative_path,
+            entry.display_path(),
+            entry.path_bytes_hex(),
             &entry.path,
             matches,
         ));
@@ -729,7 +793,8 @@ fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option
     let grouping = group_matches(&structure.items, &matches);
 
     Some(FileMatches {
-        path: entry.relative_path,
+        path: entry.display_path(),
+        path_bytes: entry.path_bytes_hex(),
         language: structure.language,
         role: structure.role,
         matches,
@@ -743,6 +808,7 @@ fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option
 
 fn build_dense_file_matches(
     path: String,
+    path_bytes: Option<String>,
     absolute_path: &Path,
     matches: Vec<LineMatch>,
 ) -> FileMatches {
@@ -750,6 +816,7 @@ fn build_dense_file_matches(
         language: infer_language(absolute_path),
         role: crate::structure::infer_role(&path),
         path,
+        path_bytes,
         groups: vec![file_scope_group((0..matches.len()).collect())],
         matches,
         total_symbols: 0,
@@ -1225,7 +1292,10 @@ mod tests {
             paths_only_args.paths_only = true;
             let paths = run_rg_paths_only(dir.path(), &paths_only_args)
                 .unwrap()
-                .expect("rg should be available");
+                .expect("rg should be available")
+                .into_iter()
+                .map(|path| path.display)
+                .collect::<Vec<_>>();
             assert_eq!(paths, expected);
 
             // Broken symlink plus zero matches: rg exits 2 with empty stdout,

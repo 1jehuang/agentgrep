@@ -26,6 +26,10 @@ pub struct SmartSummary {
 #[derive(Debug, Clone, Serialize)]
 pub struct SmartFile {
     pub path: String,
+    /// Hex of the raw relative path bytes when the name is not valid UTF-8,
+    /// so JSON consumers can address the real file. Omitted otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_bytes: Option<String>,
     pub role: String,
     pub language: String,
     pub score: i32,
@@ -98,6 +102,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
         let file = TextFile {
             path: entry.path,
             relative_path: entry.relative_path,
+            relative_raw: entry.relative_raw,
             text,
         };
         let text_lower = file.text.to_ascii_lowercase();
@@ -216,7 +221,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
 
         let file_familiarity = context
             .as_ref()
-            .map(|ctx| ctx.file_familiarity(&file.relative_path))
+            .map(|ctx| ctx.file_familiarity(&file.display_path()))
             .unwrap_or_default();
         let structure_budget = structure_budget_for_file(file_familiarity);
         let shown_items = select_structure_items(&structure.items, &regions, structure_budget);
@@ -224,7 +229,8 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
         let context_applied = context_note_for_file(file_familiarity);
 
         files.push(SmartFile {
-            path: file.relative_path,
+            path: file.display_path(),
+            path_bytes: file.path_bytes_hex(),
             role: structure.role.clone(),
             language: structure.language.clone(),
             score: file_score,
@@ -238,6 +244,10 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
         });
     }
 
+    // `path` is unique even for lossy-colliding non-UTF-8 names because
+    // display_path() appends a byte-derived suffix, so this tie-break is
+    // total and portable (collect_file_entries is also pre-sorted by native
+    // path bytes).
     files.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.path.cmp(&b.path)));
     files.truncate(args.max_files);
 
@@ -375,7 +385,7 @@ fn build_regions(
         let familiarity = context
             .map(|ctx| {
                 ctx.region_familiarity(
-                    &file.relative_path,
+                    &file.display_path(),
                     &item.label,
                     item.start_line,
                     item.end_line,
