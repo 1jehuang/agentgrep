@@ -1,5 +1,5 @@
-use globset::{Glob, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
+use ignore::overrides::{Override, OverrideBuilder};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -48,7 +48,7 @@ pub fn collect_file_entries(scope: &SearchScope<'_>) -> Vec<FileEntry> {
     }
 
     let file_type = scope.file_type.map(normalize_file_type);
-    let glob = scope.glob.and_then(build_glob);
+    let glob = scope.glob.and_then(|g| build_glob(scope.root, g));
     let mut files = Vec::new();
 
     for entry in builder.build() {
@@ -64,12 +64,12 @@ pub fn collect_file_entries(scope: &SearchScope<'_>) -> Vec<FileEntry> {
         {
             continue;
         }
-        let relative_path = normalize_display_path(scope.root, path);
         if let Some(glob) = &glob
-            && !glob.is_match(&relative_path)
+            && glob.matched(path, false).is_ignore()
         {
             continue;
         }
+        let relative_path = normalize_display_path(scope.root, path);
 
         files.push(FileEntry {
             path: path.to_path_buf(),
@@ -112,9 +112,15 @@ pub fn collect_text_files(scope: &SearchScope<'_>) -> Vec<TextFile> {
     files
 }
 
-fn build_glob(glob: &str) -> Option<GlobSet> {
-    let mut builder = GlobSetBuilder::new();
-    builder.add(Glob::new(glob).ok()?);
+// Build the glob filter with the exact machinery ripgrep uses for `-g`:
+// `ignore::overrides::Override`. This gives gitignore-style semantics
+// (bare names match at any depth, `*` does not cross `/`, leading `/`
+// anchors to the root, `!` negates) and matches on raw path bytes, so
+// non-UTF-8 file names behave the same on the rg fast path and the
+// native fallback.
+fn build_glob(root: &Path, glob: &str) -> Option<Override> {
+    let mut builder = OverrideBuilder::new(root);
+    builder.add(glob).ok()?;
     builder.build().ok()
 }
 
