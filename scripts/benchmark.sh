@@ -37,25 +37,25 @@ fi
 echo "-- literal grep vs rg --"
 hyperfine --warmup 2 --runs 10 \
   "$BIN grep --path $REPO_PATH transcription > /dev/null" \
-  "rg -n transcription $REPO_PATH > /dev/null"
+  "rg --no-config --follow --no-messages -n transcription $REPO_PATH > /dev/null"
 
 echo
 echo "-- literal paths-only grep vs rg --"
 hyperfine --warmup 2 --runs 10 \
   "$BIN grep --paths-only --path $REPO_PATH transcription > /dev/null" \
-  "rg -l transcription $REPO_PATH > /dev/null"
+  "rg --no-config --follow --no-messages -l transcription $REPO_PATH > /dev/null"
 
 echo
 echo "-- regex grep vs rg --"
 hyperfine --warmup 2 --runs 10 \
   "$BIN grep --regex --path $REPO_PATH 'transcript|voice|dictation|speech' > /dev/null" \
-  "rg -n -e 'transcript|voice|dictation|speech' $REPO_PATH > /dev/null"
+  "rg --no-config --follow --no-messages -n -e 'transcript|voice|dictation|speech' $REPO_PATH > /dev/null"
 
 echo
 echo "-- regex paths-only grep vs rg --"
 hyperfine --warmup 2 --runs 10 \
   "$BIN grep --regex --paths-only --path $REPO_PATH 'transcript|voice|dictation|speech' > /dev/null" \
-  "rg -l -e 'transcript|voice|dictation|speech' $REPO_PATH > /dev/null"
+  "rg --no-config --follow --no-messages -l -e 'transcript|voice|dictation|speech' $REPO_PATH > /dev/null"
 
 echo
 echo "-- find latency --"

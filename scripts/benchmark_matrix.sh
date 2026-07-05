@@ -63,22 +63,22 @@ run_suite() {
   benchmark_pair \
     "$name literal grep vs rg" \
     "$BIN grep --path $repo '$literal' > /dev/null" \
-    "rg -n -F '$literal' $repo > /dev/null"
+    "rg --no-config --follow --no-messages -n -F '$literal' $repo > /dev/null"
 
   benchmark_pair \
     "$name literal paths-only grep vs rg" \
     "$BIN grep --paths-only --path $repo '$literal' > /dev/null" \
-    "rg -l -F '$literal' $repo > /dev/null"
+    "rg --no-config --follow --no-messages -l -F '$literal' $repo > /dev/null"
 
   benchmark_pair \
     "$name regex grep vs rg" \
     "$BIN grep --regex --path $repo '$regex' > /dev/null" \
-    "rg -n -e '$regex' $repo > /dev/null"
+    "rg --no-config --follow --no-messages -n -e '$regex' $repo > /dev/null"
 
   benchmark_pair \
     "$name regex paths-only grep vs rg" \
     "$BIN grep --regex --paths-only --path $repo '$regex' > /dev/null" \
-    "rg -l -e '$regex' $repo > /dev/null"
+    "rg --no-config --follow --no-messages -l -e '$regex' $repo > /dev/null"
 
   benchmark_single \
     "$name find latency" \

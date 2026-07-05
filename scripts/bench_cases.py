@@ -103,7 +103,10 @@ def agentgrep_argv(
 def rg_argv(
     case: Case, corpus: Corpus, paths_only: bool, json_out: bool
 ) -> List[str]:
-    argv = ["rg"]
+    # Mirror the flags build_rg_command (src/search.rs) always passes so the
+    # rg ground truth matches agentgrep's semantics: ignore user ripgrep
+    # config, follow symlinks, and suppress per-file error noise.
+    argv = ["rg", "--no-config", "--follow", "--no-messages"]
     if json_out:
         argv.append("--json")
     elif paths_only:

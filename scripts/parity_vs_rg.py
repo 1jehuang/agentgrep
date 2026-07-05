@@ -85,7 +85,10 @@ def agentgrep_paths_only(bin_path: str, case, corpus) -> Tuple[Set[str], str]:
 def rg_matches(case, corpus) -> Tuple[Set[str], Set[Tuple[str, int]], str]:
     argv = bench_cases.rg_argv(case, corpus, paths_only=False, json_out=True)
     code, out, err = run(argv)
-    if code not in (0, 1):  # 1 == no matches
+    # Mirror agentgrep's rg exit handling (src/search.rs run_rg_output):
+    # exit 2 with partial output (e.g. broken symlinks under --follow) is
+    # still usable ground truth.
+    if code not in (0, 1) and not (code == 2 and out.strip()):
         return set(), set(), f"rg exit {code}: {err.strip()[:300]}"
     files: Set[str] = set()
     pairs: Set[Tuple[str, int]] = set()
@@ -109,7 +112,8 @@ def rg_matches(case, corpus) -> Tuple[Set[str], Set[Tuple[str, int]], str]:
 def rg_paths_only(case, corpus) -> Tuple[Set[str], str]:
     argv = bench_cases.rg_argv(case, corpus, paths_only=True, json_out=False)
     code, out, err = run(argv)
-    if code not in (0, 1):
+    # Mirror agentgrep's rg exit handling (src/search.rs run_rg_paths_only).
+    if code not in (0, 1) and not (code == 2 and out.strip()):
         return set(), f"rg exit {code}: {err.strip()[:300]}"
     files = {
         relpath(line.strip(), corpus.path)
