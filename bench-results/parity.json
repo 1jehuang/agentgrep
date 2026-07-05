@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-07-05T11:15:25.762110+00:00",
-  "agentgrep_bin": "/home/jeremy/agentgrep/target/release/agentgrep",
+  "generated_at": "2026-07-05T13:36:22.413009+00:00",
+  "agentgrep_bin": "/tmp/jcode-fls-scratch/target/release/agentgrep",
   "total_checks": 54,
   "failed_checks": 0,
   "pass": true,
@@ -11,16 +11,16 @@
       "mode": "match",
       "query": "static",
       "files": {
-        "agentgrep_count": 484,
-        "rg_count": 484,
+        "agentgrep_count": 483,
+        "rg_count": 483,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
         "extra_sample": []
       },
       "lines": {
-        "agentgrep_count": 2364,
-        "rg_count": 2364,
+        "agentgrep_count": 2362,
+        "rg_count": 2362,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
@@ -35,8 +35,8 @@
       "mode": "paths_only",
       "query": "static",
       "files": {
-        "agentgrep_count": 484,
-        "rg_count": 484,
+        "agentgrep_count": 483,
+        "rg_count": 483,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
@@ -139,8 +139,8 @@
         "extra_sample": []
       },
       "lines": {
-        "agentgrep_count": 15373,
-        "rg_count": 15373,
+        "agentgrep_count": 15370,
+        "rg_count": 15370,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
@@ -179,8 +179,8 @@
         "extra_sample": []
       },
       "lines": {
-        "agentgrep_count": 2311,
-        "rg_count": 2311,
+        "agentgrep_count": 2318,
+        "rg_count": 2318,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
@@ -219,8 +219,8 @@
         "extra_sample": []
       },
       "lines": {
-        "agentgrep_count": 2680,
-        "rg_count": 2680,
+        "agentgrep_count": 2687,
+        "rg_count": 2687,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
@@ -259,8 +259,8 @@
         "extra_sample": []
       },
       "lines": {
-        "agentgrep_count": 21513,
-        "rg_count": 21513,
+        "agentgrep_count": 21515,
+        "rg_count": 21515,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
@@ -331,16 +331,16 @@
       "mode": "match",
       "query": "static",
       "files": {
-        "agentgrep_count": 493,
-        "rg_count": 493,
+        "agentgrep_count": 492,
+        "rg_count": 492,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
         "extra_sample": []
       },
       "lines": {
-        "agentgrep_count": 2381,
-        "rg_count": 2381,
+        "agentgrep_count": 2379,
+        "rg_count": 2379,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
@@ -355,8 +355,8 @@
       "mode": "paths_only",
       "query": "static",
       "files": {
-        "agentgrep_count": 493,
-        "rg_count": 493,
+        "agentgrep_count": 492,
+        "rg_count": 492,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
@@ -491,16 +491,16 @@
       "mode": "match",
       "query": "->",
       "files": {
-        "agentgrep_count": 1996,
-        "rg_count": 1996,
+        "agentgrep_count": 1998,
+        "rg_count": 1998,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
         "extra_sample": []
       },
       "lines": {
-        "agentgrep_count": 39933,
-        "rg_count": 39933,
+        "agentgrep_count": 39985,
+        "rg_count": 39985,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
@@ -515,8 +515,8 @@
       "mode": "paths_only",
       "query": "->",
       "files": {
-        "agentgrep_count": 1996,
-        "rg_count": 1996,
+        "agentgrep_count": 1998,
+        "rg_count": 1998,
         "missing_in_agentgrep": 0,
         "extra_in_agentgrep": 0,
         "missing_sample": [],
