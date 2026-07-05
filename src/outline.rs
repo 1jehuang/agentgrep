@@ -219,6 +219,133 @@ mod tests {
         );
     }
 
+    /// Create `files` (relative paths) under `root` in the given order so we
+    /// can build corpora whose on-disk creation order differs.
+    fn create_files_in_order(root: &Path, files: &[&str]) {
+        for file in files {
+            let path = root.join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(path, "fn placeholder() {}\n").unwrap();
+        }
+    }
+
+    fn assert_lexicographically_sorted(suggestions: &[String]) {
+        let mut sorted = suggestions.to_vec();
+        sorted.sort();
+        assert_eq!(
+            suggestions,
+            &sorted[..],
+            "suggestions are not lexicographically sorted: {suggestions:?}"
+        );
+    }
+
+    #[test]
+    fn suggestions_deterministic_across_directory_creation_orders() {
+        // More exact matches (7) than MAX_SUGGESTIONS (5) so truncation is
+        // exercised: a nondeterministic readdir order would surface a
+        // different subset without the pre-truncation sort.
+        let files = [
+            "alpha/config.rs",
+            "bravo/config.rs",
+            "charlie/config.rs",
+            "delta/config.rs",
+            "echo/config.rs",
+            "foxtrot/config.rs",
+            "golf/config.rs",
+        ];
+
+        // Forward creation order.
+        let forward = tempdir().unwrap();
+        create_files_in_order(forward.path(), &files);
+
+        // Opposite creation order.
+        let reversed: Vec<&str> = files.iter().rev().copied().collect();
+        let backward = tempdir().unwrap();
+        create_files_in_order(backward.path(), &reversed);
+
+        // Shuffled creation order.
+        let shuffled = [
+            "delta/config.rs",
+            "alpha/config.rs",
+            "golf/config.rs",
+            "bravo/config.rs",
+            "foxtrot/config.rs",
+            "charlie/config.rs",
+            "echo/config.rs",
+        ];
+        let mixed = tempdir().unwrap();
+        create_files_in_order(mixed.path(), &shuffled);
+
+        let from_forward = suggest_similar_files(forward.path(), "missing/config.rs");
+        let from_backward = suggest_similar_files(backward.path(), "missing/config.rs");
+        let from_mixed = suggest_similar_files(mixed.path(), "missing/config.rs");
+
+        let expected = vec![
+            "alpha/config.rs".to_string(),
+            "bravo/config.rs".to_string(),
+            "charlie/config.rs".to_string(),
+            "delta/config.rs".to_string(),
+            "echo/config.rs".to_string(),
+        ];
+        assert_eq!(from_forward, expected, "content/order mismatch (forward)");
+        assert_eq!(
+            from_forward, from_backward,
+            "suggestions differ between opposite creation orders"
+        );
+        assert_eq!(
+            from_forward, from_mixed,
+            "suggestions differ between shuffled creation orders"
+        );
+        assert_lexicographically_sorted(&from_forward);
+    }
+
+    #[test]
+    fn suggestions_interleave_exact_before_stem_and_truncate() {
+        // Exact-name matches must all rank before stem-only matches, and the
+        // combined list must truncate to MAX_SUGGESTIONS (5) with each group
+        // lexicographically sorted. 3 exact + 3 stem = 6 candidates, so the
+        // lexicographically last stem match (util.ts) is dropped.
+        let files = [
+            "web/util.js",
+            "api/util.js",
+            "cli/util.js",
+            "util.go",
+            "util.ts",
+            "util.py",
+        ];
+
+        let forward = tempdir().unwrap();
+        create_files_in_order(forward.path(), &files);
+
+        let reversed: Vec<&str> = files.iter().rev().copied().collect();
+        let backward = tempdir().unwrap();
+        create_files_in_order(backward.path(), &reversed);
+
+        let from_forward = suggest_similar_files(forward.path(), "lib/util.js");
+        let from_backward = suggest_similar_files(backward.path(), "lib/util.js");
+
+        let expected = vec![
+            // Exact matches first, sorted.
+            "api/util.js".to_string(),
+            "cli/util.js".to_string(),
+            "web/util.js".to_string(),
+            // Then stem matches, sorted, truncated at 5 total.
+            "util.go".to_string(),
+            "util.py".to_string(),
+        ];
+        assert_eq!(from_forward, expected, "content/order mismatch (forward)");
+        assert_eq!(
+            from_forward, from_backward,
+            "suggestions differ between opposite creation orders"
+        );
+        assert!(
+            !from_forward.contains(&"util.ts".to_string()),
+            "truncation should drop the lexicographically last stem match"
+        );
+    }
+
     #[test]
     fn outline_can_truncate_items() {
         let dir = tempdir().unwrap();
