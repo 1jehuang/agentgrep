@@ -210,43 +210,70 @@ pub fn path_bytes_hex(raw: &[u8]) -> String {
     out
 }
 
-/// Make a lossy display path unique when the underlying name is not valid
-/// UTF-8, by appending a short stable suffix derived from the native bytes:
-/// `a\u{FFFD}.txt#b=ff` for `b"a\xff.txt"`. Two files whose lossy display
-/// strings collide (b"a\xff.txt" vs b"a\xfe.txt") therefore render
-/// differently, so consumers that dedup on the displayed path cannot silently
-/// drop one of them. UTF-8 paths are returned unchanged, and the suffix is a
+/// Make a lossy display path unique by appending a short stable suffix that
+/// encodes, per U+FFFD slot in the display string (left to right), what the
+/// underlying bytes are: the hex of the invalid byte run that lossy decoding
+/// replaced, or `-` when the name literally contains U+FFFD. Examples:
+///
+/// - `b"a\xff.txt"`           -> `a\u{FFFD}.txt#b=ff`
+/// - `b"a\xffb\xfe\xfd.txt"`  -> `a\u{FFFD}b\u{FFFD}\u{FFFD}.txt#b=ff.fe.fd`
+/// - literal `a\u{FFFD}.txt`  -> `a\u{FFFD}.txt#b=-`
+/// - `b"a\xff\xef\xbf\xbd.txt"` -> `a\u{FFFD}\u{FFFD}.txt#b=ff.-`
+///
+/// This mapping is injective: a suffix is appended exactly when the display
+/// contains U+FFFD, tokens never contain `#`, so the appended suffix is the
+/// text after the LAST `#b=` in the output, and replaying the tokens over the
+/// U+FFFD slots reconstructs the original bytes exactly. Distinct native
+/// names therefore always render differently, so consumers that dedup on the
+/// displayed path cannot silently drop a file, and a real UTF-8 file whose
+/// literal name mimics a disambiguated display cannot collide with it.
+/// Names without U+FFFD are returned unchanged, and the suffix is a
 /// display-level annotation only: internal opens always use the native
 /// `PathBuf`/raw bytes.
 pub fn disambiguate_display_path(lossy: &str, raw: Option<&[u8]>) -> String {
-    let Some(raw) = raw else {
-        return lossy.to_string();
-    };
-    let mut suffix = String::new();
-    let mut cursor = raw;
-    // Hex-encode exactly the invalid byte runs, in order, so the suffix is
-    // short, stable, and derived only from the bytes that the lossy string
-    // cannot represent.
-    while !cursor.is_empty() {
-        match std::str::from_utf8(cursor) {
-            Ok(_) => break,
-            Err(err) => {
-                let valid_up_to = err.valid_up_to();
-                let invalid_len = err.error_len().unwrap_or(cursor.len() - valid_up_to);
-                if !suffix.is_empty() {
-                    suffix.push('.');
-                }
-                suffix.push_str(&path_bytes_hex(
-                    &cursor[valid_up_to..valid_up_to + invalid_len],
-                ));
-                cursor = &cursor[valid_up_to + invalid_len..];
+    let mut tokens: Vec<String> = Vec::new();
+    let push_literals = |tokens: &mut Vec<String>, valid: &str| {
+        for ch in valid.chars() {
+            if ch == '\u{FFFD}' {
+                tokens.push("-".to_string());
             }
         }
+    };
+    match raw {
+        Some(raw) if std::str::from_utf8(raw).is_err() => {
+            // Walk the raw bytes, interleaving literal-U+FFFD tokens from the
+            // valid chunks with hex tokens for the invalid runs, in display
+            // order.
+            let mut cursor = raw;
+            loop {
+                match std::str::from_utf8(cursor) {
+                    Ok(valid) => {
+                        push_literals(&mut tokens, valid);
+                        break;
+                    }
+                    Err(err) => {
+                        let valid_up_to = err.valid_up_to();
+                        let valid = std::str::from_utf8(&cursor[..valid_up_to])
+                            .expect("prefix up to valid_up_to is valid UTF-8");
+                        push_literals(&mut tokens, valid);
+                        let invalid_len = err.error_len().unwrap_or(cursor.len() - valid_up_to);
+                        tokens.push(path_bytes_hex(
+                            &cursor[valid_up_to..valid_up_to + invalid_len],
+                        ));
+                        cursor = &cursor[valid_up_to + invalid_len..];
+                    }
+                }
+            }
+        }
+        // Valid UTF-8 (or no raw bytes supplied): the name may still
+        // literally contain U+FFFD, which must be marked so it cannot
+        // impersonate a lossy-decoded name (or vice versa).
+        _ => push_literals(&mut tokens, lossy),
     }
-    if suffix.is_empty() {
+    if tokens.is_empty() {
         return lossy.to_string();
     }
-    format!("{lossy}#b={suffix}")
+    format!("{lossy}#b={}", tokens.join("."))
 }
 
 #[cfg(test)]
