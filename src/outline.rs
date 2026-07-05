@@ -28,13 +28,18 @@ pub struct OutlineStructure {
 
 pub fn run_outline(root: &Path, args: &OutlineArgs) -> Result<OutlineResult, String> {
     let file_path = resolve_outline_path(root, &args.file);
-    let file_path = if file_path.exists() {
-        file_path
-    } else if let Some(native) = resolve_display_disambiguated_path(root, &args.file) {
-        // The request is a disambiguated display path (`a\u{FFFD}.txt#b=ff`)
-        // emitted by grep/find/trace for a non-UTF-8 filename; map it back to
-        // the native path so those outputs round-trip into outline.
+    // Display-path resolution runs BEFORE the verbatim exists() fast path
+    // (it is a no-op for requests without U+FFFD): the disambiguated display
+    // paths emitted by grep/find/trace are this tool's addressing contract,
+    // so a real file literally named like another file's disambiguated
+    // display (e.g. a decoy named `a\u{FFFD}.txt#b=ff` next to b"a\xff.txt")
+    // must not hijack that display. The decoy stays reachable through its
+    // own emitted display (`a\u{FFFD}.txt#b=ff#b=-`), and verbatim requests
+    // still win whenever they do not clash with an emitted display.
+    let file_path = if let Some(native) = resolve_display_disambiguated_path(root, &args.file) {
         native
+    } else if file_path.exists() {
+        file_path
     } else {
         return Err(file_not_found_error(root, &args.file, &file_path));
     };
@@ -120,19 +125,31 @@ fn resolve_display_disambiguated_path(root: &Path, requested: &str) -> Option<Pa
         no_ignore: false,
         follow: true,
     };
-    let mut matched = None;
+    // Exact disambiguated-display matches take precedence over bare lossy
+    // matches: `a\u{FFFD}.rs#b=ff` is the collider's emitted display, and it
+    // must resolve to the collider even when a decoy file is literally named
+    // `a\u{FFFD}.rs#b=ff` (that decoy's own display is
+    // `a\u{FFFD}.rs#b=ff#b=-`, which is what selects it exactly).
+    let mut exact = None;
+    let mut lossy = None;
+    let mut lossy_ambiguous = false;
     for entry in collect_file_entries(&scope) {
-        // Accept both the full disambiguated form and the bare lossy form
-        // (the latter only when it is unambiguous).
-        if entry.display_path() == requested || entry.relative_path == requested {
-            if matched.is_some() {
-                // Ambiguous bare lossy path: refuse to guess.
+        if entry.display_path() == requested {
+            if exact.is_some() {
+                // Displays are injective per file; two exact matches would
+                // mean a scheme bug. Refuse to guess.
                 return None;
             }
-            matched = Some(entry.path);
+            exact = Some(entry.path);
+        } else if entry.relative_path == requested {
+            if lossy.is_some() {
+                lossy_ambiguous = true;
+            }
+            lossy = Some(entry.path);
         }
     }
-    matched
+    // Accept the bare lossy form only when it is unambiguous.
+    exact.or(if lossy_ambiguous { None } else { lossy })
 }
 
 fn file_not_found_error(root: &Path, requested: &str, resolved: &PathBuf) -> String {
