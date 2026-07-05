@@ -4,7 +4,7 @@ use crate::workspace::{SearchScope, collect_file_entries, read_text_file};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 
@@ -322,29 +322,37 @@ fn run_rg_paths_only(root: &Path, args: &GrepArgs) -> Result<Option<Vec<String>>
     };
 
     match output.status.code() {
-        Some(0) | Some(1) => {
-            let mut paths = output
-                .stdout
-                .split(|byte| *byte == b'\0')
-                .filter(|path| !path.is_empty())
-                .map(|path| String::from_utf8_lossy(path).into_owned())
-                .map(|path| normalize_rg_path(&path))
-                .collect::<Vec<_>>();
-            paths.sort();
-            Ok(Some(paths))
+        // Exit 2 with results on stdout means rg hit per-file errors (for
+        // example broken symlinks with --follow) but still searched the rest;
+        // treat the partial output as authoritative. Exit 2 with no output is
+        // ambiguous (could be a fatal error), so fall back to the native path.
+        Some(0) | Some(1) => {}
+        Some(2) if !output.stdout.is_empty() => {}
+        Some(2) => return Ok(None),
+        Some(code) => {
+            return Err(format!(
+                "rg failed with exit code {code}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
-        Some(code) => Err(format!(
-            "rg failed with exit code {code}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )),
-        None => Err("rg terminated by signal".to_string()),
+        None => return Err("rg terminated by signal".to_string()),
     }
+
+    let mut paths = output
+        .stdout
+        .split(|byte| *byte == b'\0')
+        .filter(|path| !path.is_empty())
+        .map(|path| String::from_utf8_lossy(path).into_owned())
+        .map(|path| normalize_rg_path(&path))
+        .collect::<Vec<_>>();
+    paths.sort();
+    Ok(Some(paths))
 }
 
 fn run_rg_match_map(
     root: &Path,
     args: &GrepArgs,
-) -> Result<Option<BTreeMap<String, Vec<LineMatch>>>, String> {
+) -> Result<Option<BTreeMap<RgPathKey, Vec<LineMatch>>>, String> {
     let matcher = Matcher::new(&args.query, args.regex)?;
     #[cfg(windows)]
     {
@@ -408,6 +416,12 @@ fn run_rg_output(mut command: Command) -> Result<Option<std::process::Output>, S
 
     match output.status.code() {
         Some(0) | Some(1) => Ok(Some(output)),
+        // Exit 2 with results on stdout means rg hit per-file errors (for
+        // example broken symlinks with --follow) but still searched the rest.
+        // Exit 2 with no output is ambiguous (could be a fatal error such as a
+        // bad pattern), so return None to fall back to the native path.
+        Some(2) if !output.stdout.is_empty() => Ok(Some(output)),
+        Some(2) => Ok(None),
         Some(code) => Err(format!(
             "rg failed with exit code {code}: {}",
             String::from_utf8_lossy(&output.stderr)
@@ -419,6 +433,12 @@ fn run_rg_output(mut command: Command) -> Result<Option<std::process::Output>, S
 fn build_rg_command(root: &Path, args: &GrepArgs) -> Command {
     let mut command = Command::new("rg");
     command.current_dir(root);
+    // Isolate agentgrep from the user's ripgrep configuration so the rg fast
+    // path and the native fallback return the same results. `--no-config`
+    // (supported since rg 0.8) makes rg skip config files entirely; removing
+    // RIPGREP_CONFIG_PATH is belt-and-suspenders for the same goal.
+    command.arg("--no-config");
+    command.env_remove("RIPGREP_CONFIG_PATH");
 
     if args.regex {
         command.arg("-e").arg(&args.query);
@@ -428,6 +448,13 @@ fn build_rg_command(root: &Path, args: &GrepArgs) -> Command {
         // "--features") are not parsed as rg flags.
         command.arg("-e").arg(&args.query);
     }
+
+    // Follow symlinks so symlinked files/directories are searched, matching the
+    // native walker (workspace::collect_file_entries sets follow_links(true)).
+    // --no-messages keeps broken-symlink noise off stderr; per-file errors are
+    // tolerated via the exit-code handling in run_rg_paths_only/run_rg_output.
+    command.arg("--follow");
+    command.arg("--no-messages");
 
     if args.hidden {
         command.arg("--hidden");
@@ -449,10 +476,10 @@ fn build_rg_command(root: &Path, args: &GrepArgs) -> Command {
 fn parse_rg_plain(
     stdout: &[u8],
     matcher: &Matcher,
-) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
+) -> Result<BTreeMap<RgPathKey, Vec<LineMatch>>, String> {
     let text = std::str::from_utf8(stdout)
         .map_err(|err| format!("failed to decode rg plain output as UTF-8: {err}"))?;
-    let mut matches_by_path: BTreeMap<String, Vec<LineMatch>> = BTreeMap::new();
+    let mut matches_by_path: BTreeMap<RgPathKey, Vec<LineMatch>> = BTreeMap::new();
 
     for line in text.lines() {
         if line.is_empty() {
@@ -475,7 +502,7 @@ fn parse_rg_plain(
             .parse::<usize>()
             .map_err(|err| format!("failed to parse rg line number: {err}"))?;
         matches_by_path
-            .entry(normalize_rg_path(path))
+            .entry(RgPathKey::from_bytes(path.as_bytes()))
             .or_default()
             .push(LineMatch {
                 line_number,
@@ -489,8 +516,8 @@ fn parse_rg_plain(
 fn parse_rg_json(
     stdout: &[u8],
     matcher: &Matcher,
-) -> Result<BTreeMap<String, Vec<LineMatch>>, String> {
-    let mut matches_by_path: BTreeMap<String, Vec<LineMatch>> = BTreeMap::new();
+) -> Result<BTreeMap<RgPathKey, Vec<LineMatch>>, String> {
+    let mut matches_by_path: BTreeMap<RgPathKey, Vec<LineMatch>> = BTreeMap::new();
 
     for line in stdout.split(|byte| *byte == b'\n') {
         if line.is_empty() {
@@ -504,17 +531,21 @@ fn parse_rg_json(
         if event.kind != "match" {
             continue;
         }
-        let Some(path) = data.path.and_then(|path| path.text) else {
-            return Err("rg json output did not include a UTF-8 match path".to_string());
+        // rg --json emits {"text": ...} for UTF-8 fields and {"bytes": base64}
+        // for fields containing invalid UTF-8. Accept both so a single binary
+        // match line (or a non-UTF-8 filename) cannot fail the whole grep.
+        let Some(path_bytes) = data.path.and_then(RgTextField::into_bytes) else {
+            return Err("rg json output did not include a match path".to_string());
         };
         let Some(line_number) = data.line_number else {
             return Err("rg json output did not include line numbers".to_string());
         };
-        let Some(line_text) = data.lines.and_then(|lines| lines.text) else {
-            return Err("rg json output did not include UTF-8 line text".to_string());
+        let Some(line_bytes) = data.lines.and_then(RgTextField::into_bytes) else {
+            return Err("rg json output did not include line text".to_string());
         };
+        let line_text = String::from_utf8_lossy(&line_bytes);
         matches_by_path
-            .entry(normalize_rg_path(&path))
+            .entry(RgPathKey::from_bytes(&path_bytes))
             .or_default()
             .push(LineMatch {
                 line_number,
@@ -529,12 +560,93 @@ fn normalize_rg_path(path: &str) -> String {
     path.strip_prefix("./").unwrap_or(path).to_string()
 }
 
+/// Map key for rg match results.
+///
+/// `display` mirrors the lossy relative path the native walker produces via
+/// `normalize_display_path`, while `raw` keeps the exact bytes rg reported.
+/// Keying on both prevents two distinct non-UTF-8 filenames whose lossy
+/// display strings collide from being silently merged into one entry, and
+/// `raw` lets us open the real file on Unix.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct RgPathKey {
+    display: String,
+    raw: Vec<u8>,
+}
+
+impl RgPathKey {
+    fn from_bytes(raw: &[u8]) -> Self {
+        let raw = raw.strip_prefix(b"./".as_slice()).unwrap_or(raw);
+        Self {
+            display: normalize_rg_path(&String::from_utf8_lossy(raw)),
+            raw: raw.to_vec(),
+        }
+    }
+
+    fn to_absolute(&self, root: &Path) -> PathBuf {
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            root.join(std::ffi::OsStr::from_bytes(&self.raw))
+        }
+        #[cfg(not(unix))]
+        {
+            root.join(&self.display)
+        }
+    }
+}
+
+/// Minimal standard-alphabet base64 decoder for rg's `{"bytes": ...}` JSON
+/// fields. Returns None on any non-base64 input.
+fn decode_base64(input: &str) -> Option<Vec<u8>> {
+    fn sextet(byte: u8) -> Option<u32> {
+        match byte {
+            b'A'..=b'Z' => Some(u32::from(byte - b'A')),
+            b'a'..=b'z' => Some(u32::from(byte - b'a') + 26),
+            b'0'..=b'9' => Some(u32::from(byte - b'0') + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+
+    let data: Vec<u8> = input
+        .bytes()
+        .filter(|byte| *byte != b'=' && !byte.is_ascii_whitespace())
+        .collect();
+    let mut out = Vec::with_capacity(data.len() * 3 / 4 + 3);
+    for chunk in data.chunks(4) {
+        let mut acc: u32 = 0;
+        for &byte in chunk {
+            acc = (acc << 6) | sextet(byte)?;
+        }
+        match chunk.len() {
+            4 => {
+                out.push((acc >> 16) as u8);
+                out.push((acc >> 8) as u8);
+                out.push(acc as u8);
+            }
+            3 => {
+                acc <<= 6;
+                out.push((acc >> 16) as u8);
+                out.push((acc >> 8) as u8);
+            }
+            2 => {
+                acc <<= 12;
+                out.push((acc >> 16) as u8);
+            }
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
 fn process_rg_match_file(
     root: &Path,
-    path: String,
+    path: RgPathKey,
     matches: Vec<LineMatch>,
 ) -> Option<FileMatches> {
-    let absolute_path = root.join(&path);
+    let absolute_path = path.to_absolute(root);
+    let path = path.display;
     if matches.len() >= DENSE_MATCH_SKIP_STRUCTURE_THRESHOLD {
         return Some(build_dense_file_matches(path, &absolute_path, matches));
     }
@@ -572,6 +684,17 @@ struct RgEventData {
 #[derive(Debug, serde::Deserialize)]
 struct RgTextField {
     text: Option<String>,
+    bytes: Option<String>,
+}
+
+impl RgTextField {
+    /// Raw bytes of the field: UTF-8 `text` as-is, or base64-decoded `bytes`.
+    fn into_bytes(self) -> Option<Vec<u8>> {
+        if let Some(text) = self.text {
+            return Some(text.into_bytes());
+        }
+        self.bytes.as_deref().and_then(decode_base64)
+    }
 }
 
 fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option<FileMatches> {
@@ -882,6 +1005,16 @@ mod tests {
         }
     }
 
+    fn by_display<'a>(
+        map: &'a BTreeMap<RgPathKey, Vec<LineMatch>>,
+        name: &str,
+    ) -> &'a Vec<LineMatch> {
+        map.iter()
+            .find(|(key, _)| key.display == name)
+            .map(|(_, matches)| matches)
+            .unwrap_or_else(|| panic!("no entry with display path {name:?}"))
+    }
+
     #[test]
     fn literal_grep_finds_matches_grouped_by_file() {
         let dir = tempdir().unwrap();
@@ -900,6 +1033,105 @@ mod tests {
         assert_eq!(result.files[0].matches[1].line_number, 2);
         assert_eq!(result.files[0].groups.len(), 1);
         assert_eq!(result.files[0].groups[0].label, "auth_status");
+    }
+
+    #[test]
+    fn user_ripgrep_config_does_not_change_rg_path_results() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("keep.txt"), "needle_zzz\n").unwrap();
+        fs::write(dir.path().join(".hidden_needle"), "needle_zzz\n").unwrap();
+
+        // A user config that would change semantics if rg were allowed to
+        // read it (it would surface hidden files).
+        let config = dir.path().join("rgconfig");
+        fs::write(&config, "--hidden\n--no-ignore\n").unwrap();
+
+        let original = std::env::var_os("RIPGREP_CONFIG_PATH");
+        unsafe { std::env::set_var("RIPGREP_CONFIG_PATH", &config) };
+        let mut args = grep_args("needle_zzz");
+        args.paths_only = true;
+        let rg_result = run_grep_with_rg(dir.path(), &args);
+        match original {
+            Some(value) => unsafe { std::env::set_var("RIPGREP_CONFIG_PATH", value) },
+            None => unsafe { std::env::remove_var("RIPGREP_CONFIG_PATH") },
+        }
+
+        // Skip silently when rg is not installed; this test targets the rg
+        // fast path only.
+        let Some(rg_result) = rg_result.unwrap() else {
+            return;
+        };
+        let paths = rg_result
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            vec!["keep.txt"],
+            "user ripgrep config leaked into agentgrep results"
+        );
+    }
+
+    #[test]
+    fn rgignore_is_honored_by_both_rg_and_native_paths() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("keep.txt"), "needle_zzz\n").unwrap();
+        fs::write(dir.path().join("skipme.txt"), "needle_zzz\n").unwrap();
+        fs::write(dir.path().join(".rgignore"), "skipme.txt\n").unwrap();
+
+        let mut args = grep_args("needle_zzz");
+        args.paths_only = true;
+
+        let native = run_grep_native(dir.path(), &args).unwrap();
+        let native_paths = native
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            native_paths,
+            vec!["keep.txt"],
+            "native walker must honor .rgignore like ripgrep does"
+        );
+
+        if let Some(rg_result) = run_grep_with_rg(dir.path(), &args).unwrap() {
+            let rg_paths = rg_result
+                .files
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(rg_paths, vec!["keep.txt"]);
+        }
+    }
+
+    #[test]
+    fn no_ignore_flag_overrides_rgignore_in_both_paths() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("keep.txt"), "needle_zzz\n").unwrap();
+        fs::write(dir.path().join("skipme.txt"), "needle_zzz\n").unwrap();
+        fs::write(dir.path().join(".rgignore"), "skipme.txt\n").unwrap();
+
+        let mut args = grep_args("needle_zzz");
+        args.paths_only = true;
+        args.no_ignore = true;
+
+        let native = run_grep_native(dir.path(), &args).unwrap();
+        let native_paths = native
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(native_paths, vec!["keep.txt", "skipme.txt"]);
+
+        if let Some(rg_result) = run_grep_with_rg(dir.path(), &args).unwrap() {
+            let rg_paths = rg_result
+                .files
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(rg_paths, vec!["keep.txt", "skipme.txt"]);
+        }
     }
 
     #[test]
@@ -924,6 +1156,115 @@ mod tests {
         assert_eq!(result.total_files, 1);
         assert_eq!(result.total_matches, 2);
         assert_eq!(result.files[0].path, "a.rs");
+    }
+
+    #[cfg(unix)]
+    fn native_grep_paths(root: &Path, args: &GrepArgs) -> Vec<String> {
+        run_grep_native(root, args)
+            .unwrap()
+            .files
+            .into_iter()
+            .map(|file| file.path)
+            .collect()
+    }
+
+    /// Symlinked files, symlinked directories, and broken symlinks must yield
+    /// the same result set on the rg fast path and the native fallback.
+    #[test]
+    #[cfg(unix)]
+    fn grep_includes_symlinked_files_and_dirs_and_tolerates_broken_links_on_both_paths() {
+        use std::os::unix::fs::symlink;
+
+        let outside = tempdir().unwrap();
+        fs::write(outside.path().join("target.txt"), "sym_needle in target\n").unwrap();
+        fs::create_dir(outside.path().join("dir")).unwrap();
+        fs::write(
+            outside.path().join("dir").join("inner.txt"),
+            "sym_needle in dir\n",
+        )
+        .unwrap();
+
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("regular.txt"), "sym_needle in regular\n").unwrap();
+        symlink(
+            outside.path().join("target.txt"),
+            dir.path().join("linkfile.txt"),
+        )
+        .unwrap();
+        symlink(outside.path().join("dir"), dir.path().join("linkdir")).unwrap();
+        symlink(
+            outside.path().join("missing.txt"),
+            dir.path().join("broken.txt"),
+        )
+        .unwrap();
+
+        let args = grep_args("sym_needle");
+        let expected = vec![
+            "linkdir/inner.txt".to_string(),
+            "linkfile.txt".to_string(),
+            "regular.txt".to_string(),
+        ];
+
+        assert_eq!(native_grep_paths(dir.path(), &args), expected);
+
+        // Only meaningful when rg is installed; run_grep prefers the rg path.
+        if which_rg() {
+            let rg_result = run_grep(dir.path(), &args).unwrap();
+            let rg_paths = rg_result
+                .files
+                .into_iter()
+                .map(|file| file.path)
+                .collect::<Vec<_>>();
+            assert_eq!(rg_paths, expected);
+
+            let mut paths_only_args = grep_args("sym_needle");
+            paths_only_args.paths_only = true;
+            let paths = run_rg_paths_only(dir.path(), &paths_only_args)
+                .unwrap()
+                .expect("rg should be available");
+            assert_eq!(paths, expected);
+
+            // Broken symlink plus zero matches: rg exits 2 with empty stdout,
+            // which must fall back (None) rather than hard-error.
+            let no_match_args = grep_args("zz_absent_needle");
+            assert!(
+                run_rg_paths_only(dir.path(), &no_match_args)
+                    .unwrap()
+                    .is_none()
+            );
+            let full = run_grep(dir.path(), &no_match_args).unwrap();
+            assert_eq!(full.total_files, 0);
+        }
+    }
+
+    /// A symlinked scope root must behave like the real directory on both paths.
+    #[test]
+    #[cfg(unix)]
+    fn grep_supports_symlinked_root_on_both_paths() {
+        use std::os::unix::fs::symlink;
+
+        let real = tempdir().unwrap();
+        fs::write(real.path().join("a.txt"), "root_needle here\n").unwrap();
+        let holder = tempdir().unwrap();
+        let root_link = holder.path().join("rootlink");
+        symlink(real.path(), &root_link).unwrap();
+
+        let args = grep_args("root_needle");
+        assert_eq!(
+            native_grep_paths(&root_link, &args),
+            vec!["a.txt".to_string()]
+        );
+        let result = run_grep(&root_link, &args).unwrap();
+        assert_eq!(result.total_files, 1);
+        assert_eq!(result.files[0].path, "a.txt");
+    }
+
+    #[cfg(unix)]
+    fn which_rg() -> bool {
+        std::process::Command::new("rg")
+            .arg("--version")
+            .output()
+            .is_ok()
     }
 
     #[test]
@@ -1093,10 +1434,11 @@ mod tests {
         let matcher = Matcher::new("lock", false).unwrap();
         let parsed = parse_rg_plain(stdout, &matcher).unwrap();
         assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed["src/main.rs"].len(), 2);
-        assert_eq!(parsed["src/main.rs"][0].line_number, 12);
-        assert_eq!(parsed["src/main.rs"][1].line_text, "mutex_lock();");
-        assert_eq!(parsed["README.md"][0].line_number, 2);
+        let main_rs = by_display(&parsed, "src/main.rs");
+        assert_eq!(main_rs.len(), 2);
+        assert_eq!(main_rs[0].line_number, 12);
+        assert_eq!(main_rs[1].line_text, "mutex_lock();");
+        assert_eq!(by_display(&parsed, "README.md")[0].line_number, 2);
     }
 
     #[test]
@@ -1131,10 +1473,166 @@ mod tests {
         );
 
         let parsed = parse_rg_plain(stdout.as_bytes(), &matcher).unwrap();
-        let line_text = &parsed["assets/demo.json"][0].line_text;
+        let line_text = &by_display(&parsed, "assets/demo.json")[0].line_text;
 
         assert!(line_text.contains("status_notice"));
         assert!(line_text.contains("[truncated:"), "{line_text}");
         assert!(line_text.chars().count() < 340);
+    }
+
+    #[test]
+    fn decode_base64_roundtrips() {
+        assert_eq!(
+            decode_base64("aGVsbG8=").as_deref(),
+            Some(b"hello".as_slice())
+        );
+        assert_eq!(decode_base64("aGk=").as_deref(), Some(b"hi".as_slice()));
+        assert_eq!(decode_base64("aA==").as_deref(), Some(b"h".as_slice()));
+        assert_eq!(decode_base64("").as_deref(), Some(b"".as_slice()));
+        assert_eq!(
+            decode_base64("bmVlZGxlX3p6eiD//iBtb3JlCg==").as_deref(),
+            Some(b"needle_zzz \xff\xfe more\n".as_slice())
+        );
+        assert_eq!(decode_base64("!!!!"), None);
+    }
+
+    #[test]
+    fn parse_rg_json_accepts_bytes_encoded_line_text() {
+        // rg --json emits {"bytes": base64} instead of {"text": ...} when the
+        // matched line contains invalid UTF-8. This must not fail the grep.
+        let matcher = Matcher::new("needle_zzz", false).unwrap();
+        let stdout = concat!(
+            r#"{"type":"begin","data":{"path":{"text":"./badcontent.txt"}}}"#,
+            "\n",
+            r#"{"type":"match","data":{"path":{"text":"./badcontent.txt"},"lines":{"bytes":"bmVlZGxlX3p6eiD//iBtb3JlCg=="},"line_number":1,"absolute_offset":0,"submatches":[]}}"#,
+            "\n",
+            r#"{"type":"end","data":{"path":{"text":"./badcontent.txt"}}}"#,
+            "\n",
+        );
+
+        let parsed = parse_rg_json(stdout.as_bytes(), &matcher).unwrap();
+        assert_eq!(parsed.len(), 1);
+        let matches = by_display(&parsed, "badcontent.txt");
+        assert_eq!(matches[0].line_number, 1);
+        assert_eq!(matches[0].line_text, "needle_zzz \u{FFFD}\u{FFFD} more");
+    }
+
+    #[test]
+    fn parse_rg_json_accepts_bytes_encoded_paths() {
+        // Non-UTF-8 filenames are also emitted as {"bytes": base64}.
+        let matcher = Matcher::new("needle", false).unwrap();
+        let stdout = concat!(
+            r#"{"type":"match","data":{"path":{"bytes":"Li9h/y50eHQ="},"lines":{"text":"needle here\n"},"line_number":3,"absolute_offset":0,"submatches":[]}}"#,
+            "\n",
+        );
+
+        let parsed = parse_rg_json(stdout.as_bytes(), &matcher).unwrap();
+        assert_eq!(parsed.len(), 1);
+        let (key, matches) = parsed.iter().next().unwrap();
+        assert_eq!(key.display, "a\u{FFFD}.txt");
+        assert_eq!(key.raw, b"a\xff.txt");
+        assert_eq!(matches[0].line_number, 3);
+        assert_eq!(matches[0].line_text, "needle here");
+    }
+
+    #[test]
+    fn parse_rg_json_keeps_lossy_colliding_paths_separate() {
+        // b"a\xff.txt" and b"a\xfe.txt" both lossy-decode to "a\u{FFFD}.txt".
+        // They must remain distinct map entries instead of silently merging.
+        let matcher = Matcher::new("needle", false).unwrap();
+        let stdout = concat!(
+            r#"{"type":"match","data":{"path":{"bytes":"Li9h/y50eHQ="},"lines":{"text":"needle one\n"},"line_number":1,"absolute_offset":0,"submatches":[]}}"#,
+            "\n",
+            r#"{"type":"match","data":{"path":{"bytes":"Li9h/i50eHQ="},"lines":{"text":"needle two\n"},"line_number":1,"absolute_offset":0,"submatches":[]}}"#,
+            "\n",
+        );
+
+        let parsed = parse_rg_json(stdout.as_bytes(), &matcher).unwrap();
+        assert_eq!(parsed.len(), 2, "distinct raw paths must not merge");
+        let raws: Vec<&[u8]> = parsed.keys().map(|key| key.raw.as_slice()).collect();
+        assert!(raws.contains(&b"a\xfe.txt".as_slice()));
+        assert!(raws.contains(&b"a\xff.txt".as_slice()));
+        for matches in parsed.values() {
+            assert_eq!(matches.len(), 1);
+        }
+    }
+
+    #[test]
+    fn grep_survives_non_utf8_line_content_in_utf8_named_file() {
+        // Regression: this used to exit with "rg json output did not include
+        // UTF-8 line text" on the rg fast path while succeeding natively.
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("badcontent.txt"),
+            b"needle_zzz \xff\xfe more\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("good.txt"), "needle_zzz clean\n").unwrap();
+
+        let result = run_grep(dir.path(), &grep_args("needle_zzz")).unwrap();
+        assert_eq!(result.total_files, 2);
+        assert_eq!(result.total_matches, 2);
+        assert_eq!(result.files[0].path, "badcontent.txt");
+        assert!(result.files[0].matches[0].line_text.contains("needle_zzz"));
+        assert_eq!(result.files[1].path, "good.txt");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn grep_rg_and_native_agree_on_non_utf8_corpus() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        // Corpus: non-UTF-8 content lines, non-UTF-8 filenames, and both,
+        // including two filenames whose lossy display strings collide.
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("clean.txt"), "needle_qqq plain\n").unwrap();
+        fs::write(
+            dir.path().join("badcontent.txt"),
+            b"needle_qqq \xff\xfe binaryish\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(OsStr::from_bytes(b"bad\xffname.txt")),
+            "needle_qqq in bad name\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(OsStr::from_bytes(b"bad\xfename.txt")),
+            b"needle_qqq \xff both bad\n",
+        )
+        .unwrap();
+
+        let rg_result = run_grep_with_rg(dir.path(), &grep_args("needle_qqq")).unwrap();
+        let native_result = run_grep_native(dir.path(), &grep_args("needle_qqq")).unwrap();
+
+        let Some(rg_result) = rg_result else {
+            // rg not installed; nothing to compare.
+            return;
+        };
+
+        assert_eq!(rg_result.total_matches, 4);
+        assert_eq!(rg_result.total_files, 4, "colliding names must not merge");
+        assert_eq!(rg_result.total_files, native_result.total_files);
+        assert_eq!(rg_result.total_matches, native_result.total_matches);
+
+        let summarize = |result: &GrepResult| {
+            let mut summary = result
+                .files
+                .iter()
+                .map(|file| {
+                    (
+                        file.path.clone(),
+                        file.matches
+                            .iter()
+                            .map(|line| (line.line_number, line.line_text.clone()))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            summary.sort();
+            summary
+        };
+        assert_eq!(summarize(&rg_result), summarize(&native_result));
     }
 }

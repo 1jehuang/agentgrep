@@ -228,7 +228,9 @@ fn merge_file_into(target: &mut Familiarity, known: &KnownFile) {
     target.structure_confidence = target
         .structure_confidence
         .max(clamp_confidence(known.structure_confidence));
-    target.body_confidence = target.body_confidence.max(clamp_confidence(known.body_confidence));
+    target.body_confidence = target
+        .body_confidence
+        .max(clamp_confidence(known.body_confidence));
     target.current_version_confidence = target
         .current_version_confidence
         .max(clamp_confidence(known.current_version_confidence));
@@ -241,7 +243,9 @@ fn merge_region_into(target: &mut Familiarity, known: &KnownRegion) {
     target.structure_confidence = target
         .structure_confidence
         .max(clamp_confidence(known.structure_confidence));
-    target.body_confidence = target.body_confidence.max(clamp_confidence(known.body_confidence));
+    target.body_confidence = target
+        .body_confidence
+        .max(clamp_confidence(known.body_confidence));
     target.current_version_confidence = target
         .current_version_confidence
         .max(clamp_confidence(known.current_version_confidence));
@@ -254,7 +258,9 @@ fn merge_symbol_into(target: &mut Familiarity, known: &KnownSymbol) {
     target.structure_confidence = target
         .structure_confidence
         .max(clamp_confidence(known.structure_confidence));
-    target.body_confidence = target.body_confidence.max(clamp_confidence(known.body_confidence));
+    target.body_confidence = target
+        .body_confidence
+        .max(clamp_confidence(known.body_confidence));
     target.current_version_confidence = target
         .current_version_confidence
         .max(clamp_confidence(known.current_version_confidence));

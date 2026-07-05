@@ -28,11 +28,23 @@ pub struct TextFile {
 pub fn collect_file_entries(scope: &SearchScope<'_>) -> Vec<FileEntry> {
     let mut builder = WalkBuilder::new(scope.root);
     builder.hidden(!scope.hidden);
+    // Follow symlinks so directly-symlinked files and symlinked directories are
+    // searched, matching the rg fast path (which passes --follow). The ignore
+    // crate detects symlink loops when following, and broken symlinks simply
+    // fail the `is_file` check below and are skipped. Tradeoff: content outside
+    // the root becomes searchable through links, and hardlink-style duplicates
+    // can appear under both their real and linked paths.
+    builder.follow_links(true);
     if scope.no_ignore {
         builder.git_ignore(false);
         builder.git_global(false);
         builder.git_exclude(false);
         builder.ignore(false);
+    } else {
+        // ripgrep honors `.rgignore` files by default, but the ignore crate
+        // only knows about `.ignore`/`.gitignore`. Register `.rgignore` as a
+        // custom ignore file so the native fallback matches the rg fast path.
+        builder.add_custom_ignore_filename(".rgignore");
     }
 
     let file_type = scope.file_type.map(normalize_file_type);
