@@ -343,6 +343,7 @@ mod tests {
                 glob: None,
                 hidden: false,
                 no_ignore: true,
+                follow: true,
             };
             collect_file_entries(&scope)
                 .iter()

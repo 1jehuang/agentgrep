@@ -118,6 +118,7 @@ fn resolve_display_disambiguated_path(root: &Path, requested: &str) -> Option<Pa
         glob: None,
         hidden: true,
         no_ignore: false,
+        follow: true,
     };
     let mut matched = None;
     for entry in collect_file_entries(&scope) {

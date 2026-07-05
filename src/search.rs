@@ -256,7 +256,7 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
         };
         let files = paths
             .into_iter()
-            .filter(|path| matches_type(path))
+            .filter(|path| matches_type(&path.display))
             .map(|path| FileMatches {
                 path: path.display,
                 path_bytes: path.path_bytes,
@@ -1448,7 +1448,10 @@ mod tests {
         paths_only_args.paths_only = true;
         let paths = run_rg_paths_only(dir.path(), &paths_only_args)
             .unwrap()
-            .expect("rg should be available");
+            .expect("rg should be available")
+            .into_iter()
+            .map(|path| path.display)
+            .collect::<Vec<_>>();
         assert_eq!(paths, vec!["regular.txt".to_string()]);
     }
 

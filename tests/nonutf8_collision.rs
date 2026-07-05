@@ -74,6 +74,7 @@ fn grep_args(query: &str) -> GrepArgs {
         paths_only: false,
         hidden: false,
         no_ignore: true,
+        no_follow: false,
         path: None,
         glob: None,
     }
@@ -89,6 +90,7 @@ fn find_args(parts: &[&str]) -> FindArgs {
         max_files: 10,
         hidden: false,
         no_ignore: true,
+        no_follow: false,
         path: None,
         glob: None,
     }
