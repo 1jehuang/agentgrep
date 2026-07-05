@@ -231,12 +231,32 @@ fn run_grep_native(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
 }
 
 fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, String> {
+    // rg gives explicit `-g` whitelist globs precedence over `--type`
+    // filters, so when both a glob and a file type are set the rg result is
+    // the glob match set with the type ignored. The native walker ANDs the
+    // extension check with the glob, so post-filter rg's results by
+    // extension to keep the two paths in agreement.
+    let type_ext = if args.glob.is_some() {
+        args.file_type
+            .as_deref()
+            .map(crate::workspace::normalize_file_type)
+    } else {
+        None
+    };
+    let matches_type = |path: &str| -> bool {
+        match type_ext.as_deref() {
+            Some(ext) => Path::new(path).extension().and_then(|s| s.to_str()) == Some(ext),
+            None => true,
+        }
+    };
+
     if args.paths_only {
         let Some(paths) = run_rg_paths_only(root, args)? else {
             return Ok(None);
         };
         let files = paths
             .into_iter()
+            .filter(|path| matches_type(path))
             .map(|path| FileMatches {
                 path: path.display,
                 path_bytes: path.path_bytes,
@@ -264,7 +284,10 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
     let Some(match_map) = run_rg_match_map(root, args)? else {
         return Ok(None);
     };
-    let matched_files = match_map.into_iter().collect::<Vec<_>>();
+    let matched_files = match_map
+        .into_iter()
+        .filter(|(key, _)| matches_type(&key.display))
+        .collect::<Vec<_>>();
     let worker_count = thread::available_parallelism()
         .map(|parallelism| parallelism.get())
         .unwrap_or(1)
@@ -501,7 +524,12 @@ fn build_rg_command(root: &Path, args: &GrepArgs) -> Command {
     }
     if let Some(file_type) = args.file_type.as_deref() {
         let ext = crate::workspace::normalize_file_type(file_type);
-        command.arg("-g").arg(format!("*.{ext}"));
+        // Use a custom rg type instead of a second `-g`. Multiple `-g`
+        // globs are OR'd together by rg, which would union the file-type
+        // filter with the user's glob; a type filter ANDs with globs, which
+        // matches the native walker (extension check AND glob).
+        command.arg("--type-add").arg(format!("agft:*.{ext}"));
+        command.arg("--type").arg("agft");
     }
 
     command
@@ -1908,5 +1936,101 @@ mod tests {
             summary
         };
         assert_eq!(summarize(&rg_result), summarize(&native_result));
+    }
+
+    /// Glob semantics parity matrix: the native walker's glob filter must
+    /// return the same file set as rg's `-g` for gitignore-style patterns.
+    #[test]
+    fn glob_semantics_match_rg_dash_g() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src/sub")).unwrap();
+        for name in ["main.rs", "notes.log", "src/main.rs", "src/lib.rs", "src/sub/deep.rs"] {
+            fs::write(dir.path().join(name), "needle_glob\n").unwrap();
+        }
+
+        let paths_for = |glob: &str| -> Vec<String> {
+            let mut args = grep_args("needle_glob");
+            args.glob = Some(glob.to_string());
+            let native = run_grep_native(dir.path(), &args).unwrap();
+            let mut native_paths: Vec<String> =
+                native.files.iter().map(|f| f.path.clone()).collect();
+            native_paths.sort();
+            if let Some(rg) = run_grep_with_rg(dir.path(), &args).unwrap() {
+                let mut rg_paths: Vec<String> =
+                    rg.files.iter().map(|f| f.path.clone()).collect();
+                rg_paths.sort();
+                assert_eq!(
+                    native_paths, rg_paths,
+                    "native vs rg file sets diverged for glob {glob:?}"
+                );
+            }
+            native_paths
+        };
+
+        // Bare name matches at any depth (gitignore semantics).
+        assert_eq!(paths_for("main.rs"), vec!["main.rs", "src/main.rs"]);
+        assert_eq!(paths_for("deep.rs"), vec!["src/sub/deep.rs"]);
+        // Leading '/' anchors to the root.
+        assert_eq!(paths_for("/main.rs"), vec!["main.rs"]);
+        // '*' does not cross '/'.
+        assert_eq!(paths_for("src/*.rs"), vec!["src/lib.rs", "src/main.rs"]);
+        // Negation excludes.
+        assert_eq!(
+            paths_for("!*.log"),
+            vec!["main.rs", "src/lib.rs", "src/main.rs", "src/sub/deep.rs"]
+        );
+    }
+
+    /// A file-type filter combined with a glob must AND, not OR, on the rg
+    /// fast path (regression for `-g "*.ext"` being unioned with the glob).
+    #[test]
+    fn file_type_ands_with_glob_on_rg_path() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("root.rs"), "needle_ft\n").unwrap();
+        fs::write(dir.path().join("src/inner.rs"), "needle_ft\n").unwrap();
+        fs::write(dir.path().join("src/inner.txt"), "needle_ft\n").unwrap();
+
+        let mut args = grep_args("needle_ft");
+        args.file_type = Some("rs".to_string());
+        args.glob = Some("src/*".to_string());
+
+        let native = run_grep_native(dir.path(), &args).unwrap();
+        let mut native_paths: Vec<String> =
+            native.files.iter().map(|f| f.path.clone()).collect();
+        native_paths.sort();
+        assert_eq!(native_paths, vec!["src/inner.rs"]);
+
+        if let Some(rg) = run_grep_with_rg(dir.path(), &args).unwrap() {
+            let mut rg_paths: Vec<String> = rg.files.iter().map(|f| f.path.clone()).collect();
+            rg_paths.sort();
+            assert_eq!(rg_paths, vec!["src/inner.rs"]);
+        }
+    }
+
+    /// '?' must match a single raw byte of a non-UTF-8 file name on both
+    /// engines (regression: lossy conversion turned one byte into U+FFFD,
+    /// three bytes, so the native glob missed it).
+    #[cfg(unix)]
+    #[test]
+    fn glob_question_mark_matches_non_utf8_byte() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a1.txt"), "needle_nu\n").unwrap();
+        fs::write(
+            dir.path().join(OsStr::from_bytes(b"a\xff.txt")),
+            "needle_nu\n",
+        )
+        .unwrap();
+
+        let mut args = grep_args("needle_nu");
+        args.glob = Some("a?.txt".to_string());
+        let native = run_grep_native(dir.path(), &args).unwrap();
+        assert_eq!(native.total_files, 2, "native glob should match both files");
+        if let Some(rg) = run_grep_with_rg(dir.path(), &args).unwrap() {
+            assert_eq!(rg.total_files, 2, "rg glob should match both files");
+        }
     }
 }
