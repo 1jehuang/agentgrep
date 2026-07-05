@@ -10,6 +10,10 @@ pub struct SearchScope<'a> {
     pub glob: Option<&'a str>,
     pub hidden: bool,
     pub no_ignore: bool,
+    /// Follow symlinks during the walk. Defaults to true at call sites to
+    /// match the rg fast path (--follow); set false via --no-follow as a
+    /// guardrail when a symlink points at a huge external tree.
+    pub follow: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -34,7 +38,7 @@ pub fn collect_file_entries(scope: &SearchScope<'_>) -> Vec<FileEntry> {
     // fail the `is_file` check below and are skipped. Tradeoff: content outside
     // the root becomes searchable through links, and hardlink-style duplicates
     // can appear under both their real and linked paths.
-    builder.follow_links(true);
+    builder.follow_links(scope.follow);
     if scope.no_ignore {
         builder.git_ignore(false);
         builder.git_global(false);
@@ -56,6 +60,12 @@ pub fn collect_file_entries(scope: &SearchScope<'_>) -> Vec<FileEntry> {
             continue;
         };
         let path = entry.path();
+        // Without --follow, rg skips symlinked files entirely (the walker
+        // yields the symlink entry, but `is_file()` stats through it). Skip
+        // them here too so the native path stays in parity.
+        if !scope.follow && entry.path_is_symlink() {
+            continue;
+        }
         if !path.is_file() {
             continue;
         }

@@ -38,6 +38,7 @@ pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
         glob: args.glob.as_deref(),
         hidden: args.hidden,
         no_ignore: args.no_ignore,
+        follow: !args.no_follow,
     };
 
     let mut files = Vec::new();
@@ -222,11 +223,116 @@ mod tests {
             no_ignore: true,
             path: None,
             glob: None,
+            no_follow: false,
         };
 
         let result = run_find(dir.path(), &args);
         assert!(!result.files.is_empty());
         assert_eq!(result.files[0].path, "src/auth/mod.rs");
+    }
+
+    /// find on a tree with a symlinked directory: default follows the link
+    /// and surfaces its files, --no-follow excludes them.
+    #[test]
+    #[cfg(unix)]
+    fn find_no_follow_excludes_dir_symlink_content_and_default_includes_it() {
+        use std::os::unix::fs::symlink;
+
+        let outside = tempdir().unwrap();
+        fs::create_dir_all(outside.path().join("auth")).unwrap();
+        fs::write(
+            outside.path().join("auth").join("auth_status.rs"),
+            "pub fn auth_status() {}\n",
+        )
+        .unwrap();
+
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(
+            dir.path().join("src").join("auth_status_local.rs"),
+            "pub fn auth_status() {}\n",
+        )
+        .unwrap();
+        symlink(outside.path().join("auth"), dir.path().join("linked_auth")).unwrap();
+
+        let mut args = FindArgs {
+            query_parts: vec!["auth".to_string(), "status".to_string()],
+            file_type: Some("rs".to_string()),
+            json: false,
+            paths_only: false,
+            debug_score: false,
+            max_files: 10,
+            hidden: false,
+            no_ignore: true,
+            path: None,
+            glob: None,
+            no_follow: false,
+        };
+
+        // Default (follow): the symlinked directory's file is found.
+        let followed = run_find(dir.path(), &args);
+        let followed_paths: Vec<&str> =
+            followed.files.iter().map(|f| f.path.as_str()).collect();
+        assert!(
+            followed_paths.contains(&"linked_auth/auth_status.rs"),
+            "default find should follow dir symlinks, got {followed_paths:?}"
+        );
+        assert!(followed_paths.contains(&"src/auth_status_local.rs"));
+
+        // --no-follow: only the local file remains.
+        args.no_follow = true;
+        let unfollowed = run_find(dir.path(), &args);
+        let unfollowed_paths: Vec<&str> =
+            unfollowed.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(unfollowed_paths, vec!["src/auth_status_local.rs"]);
+    }
+
+    /// find --no-follow combined with --glob still applies the glob to
+    /// non-symlinked files.
+    #[test]
+    #[cfg(unix)]
+    fn find_no_follow_respects_glob_filter() {
+        use std::os::unix::fs::symlink;
+
+        let outside = tempdir().unwrap();
+        fs::create_dir_all(outside.path().join("auth")).unwrap();
+        fs::write(
+            outside.path().join("auth").join("auth_status.rs"),
+            "pub fn auth_status() {}\n",
+        )
+        .unwrap();
+
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(
+            dir.path().join("src").join("auth_status_local.rs"),
+            "pub fn auth_status() {}\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("src").join("auth_status_doc.md"),
+            "auth status docs\n",
+        )
+        .unwrap();
+        symlink(outside.path().join("auth"), dir.path().join("linked_auth")).unwrap();
+
+        let args = FindArgs {
+            query_parts: vec!["auth".to_string(), "status".to_string()],
+            file_type: None,
+            json: false,
+            paths_only: false,
+            debug_score: false,
+            max_files: 10,
+            hidden: false,
+            no_ignore: true,
+            path: None,
+            glob: Some("**/*.rs".to_string()),
+            no_follow: true,
+        };
+
+        let result = run_find(dir.path(), &args);
+        let paths: Vec<&str> = result.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, vec!["src/auth_status_local.rs"]);
     }
 
     #[test]
@@ -247,6 +353,7 @@ mod tests {
             no_ignore: true,
             path: None,
             glob: None,
+            no_follow: false,
         };
 
         let result = run_find(dir.path(), &args);
@@ -280,6 +387,7 @@ mod tests {
             no_ignore: true,
             path: None,
             glob: None,
+            no_follow: false,
         };
 
         let result = run_find(dir.path(), &args);

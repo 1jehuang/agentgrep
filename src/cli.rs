@@ -53,6 +53,12 @@ pub struct GrepArgs {
     #[arg(long = "no-ignore")]
     pub no_ignore: bool,
 
+    /// Do not follow symlinks while searching (guardrail for repos that
+    /// symlink huge external trees; disables the rg --follow flag and the
+    /// native walker's follow_links so both paths stay in parity).
+    #[arg(long = "no-follow")]
+    pub no_follow: bool,
+
     /// Optional root path to search instead of the current directory.
     #[arg(long)]
     pub path: Option<String>,
@@ -95,6 +101,12 @@ pub struct FindArgs {
     /// Ignore .gitignore and related ignore files.
     #[arg(long = "no-ignore")]
     pub no_ignore: bool,
+
+    /// Do not follow symlinks while searching (guardrail for repos that
+    /// symlink huge external trees; disables the rg --follow flag and the
+    /// native walker's follow_links so both paths stay in parity).
+    #[arg(long = "no-follow")]
+    pub no_follow: bool,
 
     /// Optional root path to search instead of the current directory.
     #[arg(long)]

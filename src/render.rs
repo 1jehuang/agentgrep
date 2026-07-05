@@ -485,6 +485,7 @@ mod tests {
             no_ignore: false,
             path: None,
             glob: None,
+            no_follow: false,
         }
     }
 

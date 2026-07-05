@@ -64,6 +64,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
         glob: args.glob.as_deref(),
         hidden: args.hidden,
         no_ignore: args.no_ignore,
+        follow: true,
     };
 
     let relation_terms = relation_terms(&query.relation);

@@ -159,6 +159,7 @@ fn run_grep_native(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
         glob: args.glob.as_deref(),
         hidden: args.hidden,
         no_ignore: args.no_ignore,
+        follow: !args.no_follow,
     };
     let files = collect_file_entries(&scope);
     let worker_count = thread::available_parallelism()
@@ -453,7 +454,9 @@ fn build_rg_command(root: &Path, args: &GrepArgs) -> Command {
     // native walker (workspace::collect_file_entries sets follow_links(true)).
     // --no-messages keeps broken-symlink noise off stderr; per-file errors are
     // tolerated via the exit-code handling in run_rg_paths_only/run_rg_output.
-    command.arg("--follow");
+    if !args.no_follow {
+        command.arg("--follow");
+    }
     command.arg("--no-messages");
 
     if args.hidden {
@@ -1002,6 +1005,7 @@ mod tests {
             no_ignore: false,
             path: None,
             glob: None,
+            no_follow: false,
         }
     }
 
@@ -1235,6 +1239,206 @@ mod tests {
             let full = run_grep(dir.path(), &no_match_args).unwrap();
             assert_eq!(full.total_files, 0);
         }
+    }
+
+    /// Build a root containing a regular file plus a symlinked file and a
+    /// symlinked directory that point outside the root. Returns
+    /// (root_dir, outside_dir); keep both tempdirs alive for the test body.
+    #[cfg(unix)]
+    fn symlinked_fixture(needle: &str) -> (tempfile::TempDir, tempfile::TempDir) {
+        use std::os::unix::fs::symlink;
+
+        let outside = tempdir().unwrap();
+        fs::write(
+            outside.path().join("target.txt"),
+            format!("{needle} in target\n"),
+        )
+        .unwrap();
+        fs::create_dir(outside.path().join("dir")).unwrap();
+        fs::write(
+            outside.path().join("dir").join("inner.txt"),
+            format!("{needle} in dir\n"),
+        )
+        .unwrap();
+
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("regular.txt"),
+            format!("{needle} in regular\n"),
+        )
+        .unwrap();
+        symlink(
+            outside.path().join("target.txt"),
+            dir.path().join("linkfile.txt"),
+        )
+        .unwrap();
+        symlink(outside.path().join("dir"), dir.path().join("linkdir")).unwrap();
+
+        (dir, outside)
+    }
+
+    /// --no-follow must exclude symlinked files and symlinked directories on
+    /// the native path, while the default (follow) includes them.
+    #[test]
+    #[cfg(unix)]
+    fn no_follow_excludes_symlinked_content_on_native_path() {
+        let (dir, _outside) = symlinked_fixture("nofollow_needle");
+
+        // Default: symlinked content is searched.
+        let args = grep_args("nofollow_needle");
+        assert_eq!(
+            native_grep_paths(dir.path(), &args),
+            vec![
+                "linkdir/inner.txt".to_string(),
+                "linkfile.txt".to_string(),
+                "regular.txt".to_string(),
+            ]
+        );
+
+        // --no-follow: only the regular file remains.
+        let mut no_follow_args = grep_args("nofollow_needle");
+        no_follow_args.no_follow = true;
+        assert_eq!(
+            native_grep_paths(dir.path(), &no_follow_args),
+            vec!["regular.txt".to_string()]
+        );
+    }
+
+    /// --no-follow must exclude symlinked files and symlinked directories on
+    /// the rg fast path, matching the native path exactly.
+    #[test]
+    #[cfg(unix)]
+    fn no_follow_excludes_symlinked_content_on_rg_path() {
+        if !which_rg() {
+            return;
+        }
+        let (dir, _outside) = symlinked_fixture("nofollow_rg_needle");
+
+        let mut args = grep_args("nofollow_rg_needle");
+        args.no_follow = true;
+
+        let rg_result = run_grep_with_rg(dir.path(), &args)
+            .unwrap()
+            .expect("rg should be available");
+        let rg_paths = rg_result
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(rg_paths, vec!["regular.txt"]);
+        // rg path and native path must agree under --no-follow.
+        assert_eq!(rg_paths, native_grep_paths(dir.path(), &args));
+
+        // Default (follow) on the rg path still includes symlinked content.
+        let follow_args = grep_args("nofollow_rg_needle");
+        let follow_result = run_grep_with_rg(dir.path(), &follow_args)
+            .unwrap()
+            .expect("rg should be available");
+        let follow_paths = follow_result
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            follow_paths,
+            vec!["linkdir/inner.txt", "linkfile.txt", "regular.txt"]
+        );
+
+        // paths-only rg subprocess honors --no-follow too.
+        let mut paths_only_args = grep_args("nofollow_rg_needle");
+        paths_only_args.no_follow = true;
+        paths_only_args.paths_only = true;
+        let paths = run_rg_paths_only(dir.path(), &paths_only_args)
+            .unwrap()
+            .expect("rg should be available");
+        assert_eq!(paths, vec!["regular.txt".to_string()]);
+    }
+
+    /// --no-follow combined with --hidden, --no-ignore, and --glob must apply
+    /// each filter while still excluding symlinked content, identically on
+    /// both paths.
+    #[test]
+    #[cfg(unix)]
+    fn no_follow_interacts_with_hidden_no_ignore_and_glob_on_both_paths() {
+        use std::os::unix::fs::symlink;
+
+        let outside = tempdir().unwrap();
+        fs::write(outside.path().join("linked.txt"), "combo_needle linked\n").unwrap();
+
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("plain.txt"), "combo_needle plain\n").unwrap();
+        fs::write(dir.path().join(".hidden.txt"), "combo_needle hidden\n").unwrap();
+        fs::write(dir.path().join("ignored.txt"), "combo_needle ignored\n").unwrap();
+        fs::write(dir.path().join("other.md"), "combo_needle md\n").unwrap();
+        fs::write(dir.path().join(".rgignore"), "ignored.txt\n").unwrap();
+        symlink(
+            outside.path().join("linked.txt"),
+            dir.path().join("link.txt"),
+        )
+        .unwrap();
+
+        // --no-follow + --hidden + --no-ignore: everything local surfaces
+        // (hidden and ignored included) but the symlink stays excluded.
+        let mut args = grep_args("combo_needle");
+        args.no_follow = true;
+        args.hidden = true;
+        args.no_ignore = true;
+        let expected = vec![
+            ".hidden.txt".to_string(),
+            "ignored.txt".to_string(),
+            "other.md".to_string(),
+            "plain.txt".to_string(),
+        ];
+        assert_eq!(native_grep_paths(dir.path(), &args), expected);
+        if which_rg() {
+            let rg_result = run_grep_with_rg(dir.path(), &args)
+                .unwrap()
+                .expect("rg should be available");
+            let rg_paths = rg_result
+                .files
+                .into_iter()
+                .map(|file| file.path)
+                .collect::<Vec<_>>();
+            assert_eq!(rg_paths, expected);
+        }
+
+        // --no-follow + --glob '*.txt' + --hidden + --no-ignore: glob
+        // filtering applies on top and the symlink (which also matches the
+        // glob) stays excluded. Hidden/no-ignore are set because rg's --glob
+        // whitelist overrides ignore/hidden logic while the native walker
+        // applies the glob as a post-filter; that divergence is a separate
+        // known issue, and pinning the flags keeps this test about
+        // --no-follow only.
+        let mut glob_args = grep_args("combo_needle");
+        glob_args.no_follow = true;
+        glob_args.hidden = true;
+        glob_args.no_ignore = true;
+        glob_args.glob = Some("*.txt".to_string());
+        let glob_expected = vec![
+            ".hidden.txt".to_string(),
+            "ignored.txt".to_string(),
+            "plain.txt".to_string(),
+        ];
+        assert_eq!(native_grep_paths(dir.path(), &glob_args), glob_expected);
+        if which_rg() {
+            let rg_result = run_grep_with_rg(dir.path(), &glob_args)
+                .unwrap()
+                .expect("rg should be available");
+            let rg_paths = rg_result
+                .files
+                .into_iter()
+                .map(|file| file.path)
+                .collect::<Vec<_>>();
+            assert_eq!(rg_paths, glob_expected);
+        }
+
+        // Sanity: without --no-follow the same glob also surfaces the symlink.
+        let mut follow_glob_args = grep_args("combo_needle");
+        follow_glob_args.glob = Some("*.txt".to_string());
+        assert_eq!(
+            native_grep_paths(dir.path(), &follow_glob_args),
+            vec!["link.txt".to_string(), "plain.txt".to_string()]
+        );
     }
 
     /// A symlinked scope root must behave like the real directory on both paths.

@@ -122,6 +122,7 @@ fn suggest_similar_files(root: &Path, requested: &str) -> Vec<String> {
         glob: None,
         hidden: false,
         no_ignore: false,
+        follow: true,
     };
 
     let mut exact = Vec::new();
