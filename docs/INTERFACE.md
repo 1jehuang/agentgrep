@@ -117,6 +117,18 @@ agentgrep trace --context-json /tmp/agentgrep-context.json subject:auth_status r
 
 The context file should contain abstract familiarity/freshness/pruning signals rather than raw transcript mechanics. See `docs/HARNESS_CONTEXT.md`.
 
+## Non-UTF-8 filenames
+
+Displayed paths are the lossy UTF-8 form of the native path. When a filename
+is not valid UTF-8, the displayed path gets a stable suffix derived from the
+invalid bytes (`a\uFFFD.txt#b=ff` for `b"a\xff.txt"`), so two files whose
+lossy names collide always render differently and consumers that dedup on the
+displayed path cannot silently drop one. JSON output additionally carries a
+`path_bytes` field (hex of the raw relative path bytes) for such files.
+`agentgrep outline` accepts these disambiguated display paths, so paths
+emitted by grep/find/trace round-trip. Internal file opens always use the
+native path bytes, never the display string.
+
 ## Shared flags
 
 ### Output

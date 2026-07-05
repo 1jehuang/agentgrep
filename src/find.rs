@@ -14,6 +14,10 @@ pub struct FindResult {
 #[derive(Debug, Clone, Serialize)]
 pub struct FindFile {
     pub path: String,
+    /// Hex of the raw relative path bytes when the name is not valid UTF-8,
+    /// so JSON consumers can address the real file. Omitted otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_bytes: Option<String>,
     pub role: String,
     pub language: String,
     pub score: i32,
@@ -66,7 +70,8 @@ pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
         let omitted_count = structure.items.len().saturating_sub(shown_items.len());
 
         files.push(FindFile {
-            path: file.relative_path,
+            path: file.display_path(),
+            path_bytes: file.path_bytes_hex(),
             role: structure.role.clone(),
             language: structure.language.clone(),
             score,
@@ -78,6 +83,10 @@ pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
         });
     }
 
+    // `path` is unique even for lossy-colliding non-UTF-8 names because
+    // display_path() appends a byte-derived suffix, so this tie-break is
+    // total and portable (collect_file_entries is also pre-sorted by native
+    // path bytes).
     files.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.path.cmp(&b.path)));
     files.truncate(args.max_files);
 

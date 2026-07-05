@@ -1,7 +1,10 @@
 use crate::cli::OutlineArgs;
 use crate::context::HarnessContext;
 use crate::structure::{StructureItem, extract_file_structure};
-use crate::workspace::{SearchScope, collect_file_entries, normalize_display_path, read_text_file};
+use crate::workspace::{
+    SearchScope, collect_file_entries, disambiguate_display_path, normalize_display_path,
+    read_text_file, relative_raw_bytes,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -25,9 +28,16 @@ pub struct OutlineStructure {
 
 pub fn run_outline(root: &Path, args: &OutlineArgs) -> Result<OutlineResult, String> {
     let file_path = resolve_outline_path(root, &args.file);
-    if !file_path.exists() {
+    let file_path = if file_path.exists() {
+        file_path
+    } else if let Some(native) = resolve_display_disambiguated_path(root, &args.file) {
+        // The request is a disambiguated display path (`a\u{FFFD}.txt#b=ff`)
+        // emitted by grep/find/trace for a non-UTF-8 filename; map it back to
+        // the native path so those outputs round-trip into outline.
+        native
+    } else {
         return Err(file_not_found_error(root, &args.file, &file_path));
-    }
+    };
     if !file_path.is_file() {
         return Err(format!("not a file: {}", file_path.display()));
     }
@@ -36,13 +46,19 @@ pub fn run_outline(root: &Path, args: &OutlineArgs) -> Result<OutlineResult, Str
         .ok_or_else(|| format!("file is binary or unreadable: {}", file_path.display()))?;
     let display_path = normalize_display_path(root, &file_path);
     let structure = extract_file_structure(&file_path, &display_path, &text);
+    // Emit the disambiguated form so non-UTF-8 outline paths stay unique and
+    // round-trippable, matching grep/find/trace output.
+    let output_path = disambiguate_display_path(
+        &display_path,
+        relative_raw_bytes(root, &file_path).as_deref(),
+    );
     let total_lines = text.lines().count().max(1);
     let context = HarnessContext::load(args.context_json.as_deref())?;
 
     let (max_items, context_applied) = if let Some(max_items) = args.max_items {
         (max_items, None)
     } else if let Some(context) = &context {
-        let familiarity = context.file_familiarity(&display_path);
+        let familiarity = context.file_familiarity(&output_path);
         if familiarity.structure_confidence >= 0.8
             && familiarity.current_version_confidence >= 0.6
             && familiarity.prune_confidence >= 0.7
@@ -67,7 +83,7 @@ pub fn run_outline(root: &Path, args: &OutlineArgs) -> Result<OutlineResult, Str
 
     Ok(OutlineResult {
         root: root.display().to_string(),
-        path: display_path,
+        path: output_path,
         language: structure.language,
         role: structure.role,
         total_lines,
@@ -86,6 +102,36 @@ fn resolve_outline_path(root: &Path, file: &str) -> PathBuf {
     } else {
         root.join(path)
     }
+}
+
+/// Resolve a display-disambiguated path (one containing U+FFFD, optionally
+/// with the `#b=` byte suffix appended by `disambiguate_display_path`) back
+/// to the native path of the file it names. Returns None when the request
+/// does not look like a disambiguated path or no workspace file matches.
+fn resolve_display_disambiguated_path(root: &Path, requested: &str) -> Option<PathBuf> {
+    if !requested.contains('\u{FFFD}') {
+        return None;
+    }
+    let scope = SearchScope {
+        root,
+        file_type: None,
+        glob: None,
+        hidden: true,
+        no_ignore: false,
+    };
+    let mut matched = None;
+    for entry in collect_file_entries(&scope) {
+        // Accept both the full disambiguated form and the bare lossy form
+        // (the latter only when it is unambiguous).
+        if entry.display_path() == requested || entry.relative_path == requested {
+            if matched.is_some() {
+                // Ambiguous bare lossy path: refuse to guess.
+                return None;
+            }
+            matched = Some(entry.path);
+        }
+    }
+    matched
 }
 
 fn file_not_found_error(root: &Path, requested: &str, resolved: &PathBuf) -> String {
@@ -131,13 +177,13 @@ fn suggest_similar_files(root: &Path, requested: &str) -> Vec<String> {
             continue;
         };
         if name == requested_name.as_str() {
-            exact.push(entry.relative_path.clone());
+            exact.push(entry.display_path());
         } else if let Some(requested_stem) = requested_stem.as_deref() {
             let stem = Path::new(name.as_ref())
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().to_ascii_lowercase());
             if stem.as_deref() == Some(requested_stem) {
-                stem_matches.push(entry.relative_path.clone());
+                stem_matches.push(entry.display_path());
             }
         }
     }
