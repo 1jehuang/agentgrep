@@ -129,6 +129,15 @@ displayed path cannot silently drop one. JSON output additionally carries a
 emitted by grep/find/trace round-trip. Internal file opens always use the
 native path bytes, never the display string.
 
+Harness context files (`--context-json`) must key `path` fields by the path
+exactly as agentgrep displays it, i.e. the disambiguated form
+(`a\uFFFD.txt#b=ff`) for non-UTF-8 names. Matching is exact string equality:
+a bare lossy key (`a\uFFFD.txt`) does not match any byte-collider, so
+familiarity recorded by older harnesses under the lossy form degrades safely
+to "unknown file" (full, uncompressed output) instead of compressing the
+wrong file. Harnesses should record the `path` string from agentgrep output
+verbatim.
+
 ## Shared flags
 
 ### Output

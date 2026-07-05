@@ -455,4 +455,68 @@ mod tests {
         assert_eq!(result.structure.omitted_count, 1);
         assert!(result.context_applied.is_some());
     }
+
+    /// Context path keys are matched exactly against the displayed
+    /// (disambiguated) path. For non-UTF-8 colliders `a\xff.py` / `a\xfe.py`:
+    /// a context entry keyed by the disambiguated form (`a\u{FFFD}.py#b=ff`)
+    /// compresses only that collider, and an entry keyed by the bare lossy
+    /// form (`a\u{FFFD}.py`, e.g. from an older harness) matches neither
+    /// collider, degrading safely to full uncompressed output.
+    #[cfg(unix)]
+    #[test]
+    fn outline_context_keys_on_disambiguated_path_for_non_utf8_names() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = tempdir().unwrap();
+        let body = (0..12)
+            .map(|i| format!("def f{i}():\n    return {i}\n"))
+            .collect::<String>();
+        fs::write(dir.path().join(OsStr::from_bytes(b"a\xff.py")), &body).unwrap();
+        fs::write(dir.path().join(OsStr::from_bytes(b"a\xfe.py")), &body).unwrap();
+
+        let make_args = |file: &str, context: &std::path::Path| OutlineArgs {
+            file: file.to_string(),
+            json: false,
+            max_items: None,
+            path: None,
+            context_json: Some(context.display().to_string()),
+        };
+
+        // Disambiguated key: applies to exactly that collider.
+        let disamb_ctx = dir.path().join("ctx-disamb.json");
+        fs::write(
+            &disamb_ctx,
+            r#"{"known_files":[{"path":"a\uFFFD.py#b=ff","structure_confidence":0.95,"current_version_confidence":0.9,"prune_confidence":0.85}]}"#,
+        )
+        .unwrap();
+        let ff = run_outline(dir.path(), &make_args("a\u{FFFD}.py#b=ff", &disamb_ctx)).unwrap();
+        assert!(
+            ff.context_applied.is_some(),
+            "disambiguated key must compress the matching collider"
+        );
+        let fe = run_outline(dir.path(), &make_args("a\u{FFFD}.py#b=fe", &disamb_ctx)).unwrap();
+        assert!(
+            fe.context_applied.is_none(),
+            "familiarity must not bleed to the other collider"
+        );
+        assert_eq!(fe.structure.omitted_count, 0);
+
+        // Bare lossy key (older harness): matches neither collider, so both
+        // stay uncompressed instead of compressing the wrong file.
+        let lossy_ctx = dir.path().join("ctx-lossy.json");
+        fs::write(
+            &lossy_ctx,
+            r#"{"known_files":[{"path":"a\uFFFD.py","structure_confidence":0.95,"current_version_confidence":0.9,"prune_confidence":0.85}]}"#,
+        )
+        .unwrap();
+        for file in ["a\u{FFFD}.py#b=ff", "a\u{FFFD}.py#b=fe"] {
+            let result = run_outline(dir.path(), &make_args(file, &lossy_ctx)).unwrap();
+            assert!(
+                result.context_applied.is_none(),
+                "bare lossy key must not match byte-collider {file}"
+            );
+            assert_eq!(result.structure.omitted_count, 0);
+        }
+    }
 }

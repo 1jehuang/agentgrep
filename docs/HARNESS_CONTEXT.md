@@ -66,6 +66,24 @@ For example:
 
 However, that internal state should be compiled down into a much smaller external contract before being passed to `agentgrep`.
 
+## Path keys must match displayed paths exactly
+
+Every `path` field in the context file is matched by exact string equality
+(after separator normalization) against the path agentgrep displays. Record
+the `path` value from agentgrep output verbatim.
+
+This matters for non-UTF-8 filenames: agentgrep displays them in a
+disambiguated lossy form with a byte-derived suffix (`a\uFFFD.txt#b=ff` for
+`b"a\xff.txt"`), and that full string, including the `#b=` suffix, is the
+context key. A bare lossy key (`a\uFFFD.txt`) matches only a file literally
+named with U+FFFD, never a byte-collider. So:
+
+- context keyed by the disambiguated path applies familiarity to exactly that
+  collider and never bleeds to a sibling with the same lossy name
+- context keyed by the bare lossy form (e.g. from an older harness) simply
+  fails to match, which degrades safely: the file is treated as unfamiliar and
+  rendered in full, rather than compressed by mistake
+
 ## The right abstraction: confidence, not timestamps
 
 A raw field like:
