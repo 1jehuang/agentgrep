@@ -98,12 +98,17 @@ pub fn collect_file_entries(scope: &SearchScope<'_>) -> Vec<FileEntry> {
         {
             continue;
         }
-        let relative_path = normalize_display_path(scope.root, path);
+        // Match globs against the raw relative path (not the lossy display
+        // string) so non-UTF-8 names filter identically to the rg fast path,
+        // which also matches raw bytes via globset. On Unix, `Path` preserves
+        // the raw bytes, so e.g. `a?.txt` matches b"a\xff.txt" while a glob
+        // containing a literal U+FFFD replacement character does not.
         if let Some(glob) = &glob
-            && !glob.is_match(&relative_path)
+            && !glob.is_match(path.strip_prefix(scope.root).unwrap_or(path))
         {
             continue;
         }
+        let relative_path = normalize_display_path(scope.root, path);
 
         let relative_raw = relative_raw_bytes(scope.root, path);
         files.push(FileEntry {
@@ -348,5 +353,69 @@ mod tests {
             expected,
             "entry order must not depend on filesystem creation/readdir order"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn glob_and_type_filters_match_raw_bytes_not_lossy_display() {
+        use std::ffi::OsStr;
+        use std::fs;
+        use std::os::unix::ffi::OsStrExt;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        for name in [
+            b"a\xff.txt".as_slice(),
+            b"a\xfe.txt",
+            b"c\xff.rs",
+            b"plain.txt",
+            b"plain.rs",
+        ] {
+            fs::write(dir.path().join(OsStr::from_bytes(name)), "x\n").unwrap();
+        }
+
+        let collect = |glob: Option<&str>, file_type: Option<&str>| {
+            let scope = SearchScope {
+                root: dir.path(),
+                file_type,
+                glob,
+                hidden: false,
+                no_ignore: true,
+            };
+            collect_file_entries(&scope)
+                .iter()
+                .map(FileEntry::display_path)
+                .collect::<Vec<_>>()
+        };
+
+        // Extension globs and --type must include non-UTF-8 names, matching
+        // the raw bytes exactly as the rg fast path does.
+        assert_eq!(
+            collect(Some("*.txt"), None),
+            vec![
+                "a\u{FFFD}.txt#b=fe".to_string(),
+                "a\u{FFFD}.txt#b=ff".to_string(),
+                "plain.txt".to_string(),
+            ]
+        );
+        assert_eq!(
+            collect(None, Some("rs")),
+            vec!["c\u{FFFD}.rs#b=ff".to_string(), "plain.rs".to_string()]
+        );
+        // `?` matches a single byte-run on raw paths (rg semantics), so it
+        // matches the single invalid byte; a literal U+FFFD glob must NOT
+        // match because the raw name contains 0xff, not the replacement char.
+        assert_eq!(
+            collect(Some("a?.txt"), None),
+            vec![
+                "a\u{FFFD}.txt#b=fe".to_string(),
+                "a\u{FFFD}.txt#b=ff".to_string(),
+            ]
+        );
+        assert_eq!(collect(Some("a\u{FFFD}.txt"), None), Vec::<String>::new());
+        // The '#b=' display suffix is display-only and must never leak into
+        // glob matching.
+        assert_eq!(collect(Some("*ff"), None), Vec::<String>::new());
+        assert_eq!(collect(Some("*#b=*"), None), Vec::<String>::new());
     }
 }
