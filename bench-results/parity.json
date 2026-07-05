@@ -1,0 +1,1089 @@
+{
+  "generated_at": "2026-07-05T11:15:25.762110+00:00",
+  "agentgrep_bin": "/home/jeremy/agentgrep/target/release/agentgrep",
+  "total_checks": 54,
+  "failed_checks": 0,
+  "pass": true,
+  "results": [
+    {
+      "corpus": "jcode",
+      "case": "common_literal",
+      "mode": "match",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 484,
+        "rg_count": 484,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 2364,
+        "rg_count": 2364,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "common_literal",
+      "mode": "paths_only",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 484,
+        "rg_count": 484,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "rare_literal",
+      "mode": "match",
+      "query": "transcription",
+      "files": {
+        "agentgrep_count": 4,
+        "rg_count": 4,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 6,
+        "rg_count": 6,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "rare_literal",
+      "mode": "paths_only",
+      "query": "transcription",
+      "files": {
+        "agentgrep_count": 4,
+        "rg_count": 4,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "zero_match_literal",
+      "mode": "match",
+      "query": "zqxjv_no_match_sentinel_9317",
+      "files": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "zero_match_literal",
+      "mode": "paths_only",
+      "query": "zqxjv_no_match_sentinel_9317",
+      "files": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "dash_literal",
+      "mode": "match",
+      "query": "->",
+      "files": {
+        "agentgrep_count": 1078,
+        "rg_count": 1078,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 15373,
+        "rg_count": 15373,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "dash_literal",
+      "mode": "paths_only",
+      "query": "->",
+      "files": {
+        "agentgrep_count": 1078,
+        "rg_count": 1078,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "regex_alternation",
+      "mode": "match",
+      "query": "transcript|voice|dictation|speech",
+      "files": {
+        "agentgrep_count": 304,
+        "rg_count": 304,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 2311,
+        "rg_count": 2311,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "regex_alternation",
+      "mode": "paths_only",
+      "query": "transcript|voice|dictation|speech",
+      "files": {
+        "agentgrep_count": 304,
+        "rg_count": 304,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "regex_class",
+      "mode": "match",
+      "query": "[Tt]ranscript[a-z]*",
+      "files": {
+        "agentgrep_count": 291,
+        "rg_count": 291,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 2680,
+        "rg_count": 2680,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "regex_class",
+      "mode": "paths_only",
+      "query": "[Tt]ranscript[a-z]*",
+      "files": {
+        "agentgrep_count": 291,
+        "rg_count": 291,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "type_rs",
+      "mode": "match",
+      "query": "fn ",
+      "files": {
+        "agentgrep_count": 1012,
+        "rg_count": 1012,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 21513,
+        "rg_count": 21513,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "type_rs",
+      "mode": "paths_only",
+      "query": "fn ",
+      "files": {
+        "agentgrep_count": 1012,
+        "rg_count": 1012,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "glob_md",
+      "mode": "match",
+      "query": "the",
+      "files": {
+        "agentgrep_count": 72,
+        "rg_count": 72,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 2393,
+        "rg_count": 2393,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "glob_md",
+      "mode": "paths_only",
+      "query": "the",
+      "files": {
+        "agentgrep_count": 72,
+        "rg_count": 72,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "hidden",
+      "mode": "match",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 493,
+        "rg_count": 493,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 2381,
+        "rg_count": 2381,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "jcode",
+      "case": "hidden",
+      "mode": "paths_only",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 493,
+        "rg_count": 493,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "common_literal",
+      "mode": "match",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 2777,
+        "rg_count": 2777,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 37842,
+        "rg_count": 37842,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "common_literal",
+      "mode": "paths_only",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 2777,
+        "rg_count": 2777,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "rare_literal",
+      "mode": "match",
+      "query": "kmalloc_array_node",
+      "files": {
+        "agentgrep_count": 3,
+        "rg_count": 3,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 10,
+        "rg_count": 10,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "rare_literal",
+      "mode": "paths_only",
+      "query": "kmalloc_array_node",
+      "files": {
+        "agentgrep_count": 3,
+        "rg_count": 3,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "zero_match_literal",
+      "mode": "match",
+      "query": "zqxjv_no_match_sentinel_9317",
+      "files": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "zero_match_literal",
+      "mode": "paths_only",
+      "query": "zqxjv_no_match_sentinel_9317",
+      "files": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "dash_literal",
+      "mode": "match",
+      "query": "->",
+      "files": {
+        "agentgrep_count": 1996,
+        "rg_count": 1996,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 39933,
+        "rg_count": 39933,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "dash_literal",
+      "mode": "paths_only",
+      "query": "->",
+      "files": {
+        "agentgrep_count": 1996,
+        "rg_count": 1996,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "regex_alternation",
+      "mode": "match",
+      "query": "transcript|voice|dictation|speech",
+      "files": {
+        "agentgrep_count": 42,
+        "rg_count": 42,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 245,
+        "rg_count": 245,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "regex_alternation",
+      "mode": "paths_only",
+      "query": "transcript|voice|dictation|speech",
+      "files": {
+        "agentgrep_count": 42,
+        "rg_count": 42,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "regex_class",
+      "mode": "match",
+      "query": "[Tt]ranscript[a-z]*",
+      "files": {
+        "agentgrep_count": 1,
+        "rg_count": 1,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 1,
+        "rg_count": 1,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "regex_class",
+      "mode": "paths_only",
+      "query": "[Tt]ranscript[a-z]*",
+      "files": {
+        "agentgrep_count": 1,
+        "rg_count": 1,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "type_rs",
+      "mode": "match",
+      "query": "fn ",
+      "files": {
+        "agentgrep_count": 3,
+        "rg_count": 3,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 25,
+        "rg_count": 25,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "type_rs",
+      "mode": "paths_only",
+      "query": "fn ",
+      "files": {
+        "agentgrep_count": 3,
+        "rg_count": 3,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "glob_md",
+      "mode": "match",
+      "query": "the",
+      "files": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "glob_md",
+      "mode": "paths_only",
+      "query": "the",
+      "files": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "hidden",
+      "mode": "match",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 2779,
+        "rg_count": 2779,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 37845,
+        "rg_count": 37845,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "linux",
+      "case": "hidden",
+      "mode": "paths_only",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 2779,
+        "rg_count": 2779,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "common_literal",
+      "mode": "match",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 1500,
+        "rg_count": 1500,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 1500,
+        "rg_count": 1500,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "common_literal",
+      "mode": "paths_only",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 1500,
+        "rg_count": 1500,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "rare_literal",
+      "mode": "match",
+      "query": "start_live_transcription",
+      "files": {
+        "agentgrep_count": 1,
+        "rg_count": 1,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 1,
+        "rg_count": 1,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "rare_literal",
+      "mode": "paths_only",
+      "query": "start_live_transcription",
+      "files": {
+        "agentgrep_count": 1,
+        "rg_count": 1,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "zero_match_literal",
+      "mode": "match",
+      "query": "zqxjv_no_match_sentinel_9317",
+      "files": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "zero_match_literal",
+      "mode": "paths_only",
+      "query": "zqxjv_no_match_sentinel_9317",
+      "files": {
+        "agentgrep_count": 0,
+        "rg_count": 0,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "dash_literal",
+      "mode": "match",
+      "query": "->",
+      "files": {
+        "agentgrep_count": 1501,
+        "rg_count": 1501,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 1501,
+        "rg_count": 1501,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "dash_literal",
+      "mode": "paths_only",
+      "query": "->",
+      "files": {
+        "agentgrep_count": 1501,
+        "rg_count": 1501,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "regex_alternation",
+      "mode": "match",
+      "query": "transcript|voice|dictation|speech",
+      "files": {
+        "agentgrep_count": 405,
+        "rg_count": 405,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 416,
+        "rg_count": 416,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "regex_alternation",
+      "mode": "paths_only",
+      "query": "transcript|voice|dictation|speech",
+      "files": {
+        "agentgrep_count": 405,
+        "rg_count": 405,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "regex_class",
+      "mode": "match",
+      "query": "[Tt]ranscript[a-z]*",
+      "files": {
+        "agentgrep_count": 205,
+        "rg_count": 205,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 222,
+        "rg_count": 222,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "regex_class",
+      "mode": "paths_only",
+      "query": "[Tt]ranscript[a-z]*",
+      "files": {
+        "agentgrep_count": 205,
+        "rg_count": 205,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "type_rs",
+      "mode": "match",
+      "query": "fn ",
+      "files": {
+        "agentgrep_count": 1502,
+        "rg_count": 1502,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 3005,
+        "rg_count": 3005,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "type_rs",
+      "mode": "paths_only",
+      "query": "fn ",
+      "files": {
+        "agentgrep_count": 1502,
+        "rg_count": 1502,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "glob_md",
+      "mode": "match",
+      "query": "the",
+      "files": {
+        "agentgrep_count": 2,
+        "rg_count": 2,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 2,
+        "rg_count": 2,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "glob_md",
+      "mode": "paths_only",
+      "query": "the",
+      "files": {
+        "agentgrep_count": 2,
+        "rg_count": 2,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "hidden",
+      "mode": "match",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 1500,
+        "rg_count": 1500,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "lines": {
+        "agentgrep_count": 1500,
+        "rg_count": 1500,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "corpus": "synthetic",
+      "case": "hidden",
+      "mode": "paths_only",
+      "query": "static",
+      "files": {
+        "agentgrep_count": 1500,
+        "rg_count": 1500,
+        "missing_in_agentgrep": 0,
+        "extra_in_agentgrep": 0,
+        "missing_sample": [],
+        "extra_sample": []
+      },
+      "errors": [],
+      "pass": true
+    }
+  ]
+}
