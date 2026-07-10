@@ -92,6 +92,18 @@ The GIFs are short previews; click either one for the full MP4 replay.
 
 ## Install
 
+### With Nix (flakes)
+
+```bash
+nix run github:1jehuang/agentgrep
+```
+
+Or install permanently:
+
+```bash
+nix profile install github:1jehuang/agentgrep
+```
+
 ### Build locally
 
 ```bash
