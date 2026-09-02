@@ -7,4 +7,6 @@ pub mod search;
 pub mod smart_dsl;
 pub mod smart_engine;
 pub mod structure;
+#[cfg(test)]
+pub mod test_support;
 pub mod workspace;

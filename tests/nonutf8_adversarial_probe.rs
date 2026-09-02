@@ -24,6 +24,31 @@ use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use tempfile::tempdir;
 
+/// Whether `dir` can hold files whose names are not valid UTF-8.
+///
+/// This corpus needs raw byte filenames such as `a\xff.rs`. They are
+/// representable on Linux and most Unix filesystems, but APFS (macOS) enforces
+/// UTF-8 filenames and rejects the write with `EILSEQ` ("Illegal byte
+/// sequence"). Tests below skip rather than fail there, so the suite stays
+/// green on macOS while keeping full coverage where the scenario is reachable.
+fn supports_non_utf8_filenames(dir: &std::path::Path) -> bool {
+    let probe = dir.join(OsStr::from_bytes(b"\xff.agentgrep-probe"));
+    match fs::write(&probe, "") {
+        Ok(()) => {
+            let _ = fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn skip_non_utf8(test_name: &str) {
+    eprintln!(
+        "skipping {test_name}: filesystem rejects non-UTF-8 filenames \
+         (expected on macOS/APFS and Windows)"
+    );
+}
+
 fn display_for(raw: &[u8]) -> String {
     let lossy = String::from_utf8_lossy(raw).into_owned();
     let non_utf8 = std::str::from_utf8(raw).is_err();
@@ -127,6 +152,10 @@ fn hash_b_decoy_display_does_not_collide() {
 fn combined_decoys_are_separately_addressable_in_all_modes() {
     let dir = tempdir().unwrap();
     let root = dir.path();
+    if !supports_non_utf8_filenames(root) {
+        skip_non_utf8("combined_decoys_are_separately_addressable_in_all_modes");
+        return;
+    }
     let collider: &[u8] = b"a\xff.rs";
     let literal_decoy = "a\u{FFFD}.rs";
     let hashb_decoy = "a\u{FFFD}.rs#b=ff";
@@ -290,6 +319,11 @@ fn fuzz_random_byte_names_have_injective_resolvable_displays() {
         raw_names.insert(name);
     }
     assert!(raw_names.len() > 100, "fuzz corpus too small");
+
+    if !supports_non_utf8_filenames(root) {
+        skip_non_utf8("fuzz_random_byte_names_have_injective_resolvable_displays");
+        return;
+    }
 
     // Create each file with a unique marker function.
     let mut marker_by_display: HashMap<String, String> = HashMap::new();

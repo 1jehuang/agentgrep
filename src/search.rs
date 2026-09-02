@@ -1891,6 +1891,10 @@ mod tests {
         // Corpus: non-UTF-8 content lines, non-UTF-8 filenames, and both,
         // including two filenames whose lossy display strings collide.
         let dir = tempdir().unwrap();
+        if !crate::test_support::supports_non_utf8_filenames(dir.path()) {
+            crate::test_support::skip_non_utf8("grep_rg_and_native_agree_on_non_utf8_corpus");
+            return;
+        }
         fs::write(dir.path().join("clean.txt"), "needle_qqq plain\n").unwrap();
         fs::write(
             dir.path().join("badcontent.txt"),
@@ -2021,6 +2025,10 @@ mod tests {
         use std::os::unix::ffi::OsStrExt;
 
         let dir = tempdir().unwrap();
+        if !crate::test_support::supports_non_utf8_filenames(dir.path()) {
+            crate::test_support::skip_non_utf8("glob_question_mark_matches_non_utf8_byte");
+            return;
+        }
         fs::write(dir.path().join("a1.txt"), "needle_nu\n").unwrap();
         fs::write(
             dir.path().join(OsStr::from_bytes(b"a\xff.txt")),

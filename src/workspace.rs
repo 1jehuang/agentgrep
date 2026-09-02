@@ -349,6 +349,14 @@ mod tests {
         use std::os::unix::ffi::OsStrExt;
         use tempfile::tempdir;
 
+        let probe = tempdir().unwrap();
+        if !crate::test_support::supports_non_utf8_filenames(probe.path()) {
+            crate::test_support::skip_non_utf8(
+                "collect_file_entries_sorted_by_native_bytes_regardless_of_creation_order",
+            );
+            return;
+        }
+
         let names: [&[u8]; 4] = [b"a\xff.rs", b"a\xfe.rs", b"zz.rs", b"aa.rs"];
 
         let make_corpus = |order: &[&[u8]]| {
@@ -403,6 +411,13 @@ mod tests {
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
+        if !crate::test_support::supports_non_utf8_filenames(dir.path()) {
+            crate::test_support::skip_non_utf8(
+                "glob_and_type_filters_match_raw_bytes_not_lossy_display",
+            );
+            return;
+        }
+
         for name in [
             b"a\xff.txt".as_slice(),
             b"a\xfe.txt",
