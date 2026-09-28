@@ -280,8 +280,7 @@ mod tests {
 
         // Default (follow): the symlinked directory's file is found.
         let followed = run_find(dir.path(), &args);
-        let followed_paths: Vec<&str> =
-            followed.files.iter().map(|f| f.path.as_str()).collect();
+        let followed_paths: Vec<&str> = followed.files.iter().map(|f| f.path.as_str()).collect();
         assert!(
             followed_paths.contains(&"linked_auth/auth_status.rs"),
             "default find should follow dir symlinks, got {followed_paths:?}"

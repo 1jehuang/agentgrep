@@ -59,6 +59,35 @@ pub struct GrepArgs {
     #[arg(long = "no-follow")]
     pub no_follow: bool,
 
+    /// Stop after this many matches per file.
+    ///
+    /// Consumers that render only the first N regions per file otherwise pay
+    /// for a full unbounded scan: `rg` reports every match and agentgrep parses
+    /// all of them before truncation happens at render time. Setting this
+    /// pushes the bound into `rg --max-count` (and an equivalent early exit on
+    /// the native path), which is where the work actually is.
+    ///
+    /// This is a per-file cap, so `total_matches` becomes a lower bound when it
+    /// is set. Leave it unset for exact counts.
+    #[arg(long = "max-count")]
+    pub max_matches_per_file: Option<usize>,
+
+    /// Extract per-file structure (symbols, grouping) for at most this many
+    /// files, in result order.
+    ///
+    /// Structure extraction re-reads and parses each matched file, costing
+    /// ~26us/file. Consumers that render only a bounded prefix of results pay
+    /// that for every match: a query hitting 625 files does 625 extractions
+    /// even when the renderer stops after a fraction of them. Files past the
+    /// bound still appear with their matches, just without symbol grouping,
+    /// exactly like files over the dense-match threshold.
+    ///
+    /// Results are ordered by display path before this is applied, so the
+    /// gated prefix is deterministic and matches what a path-ordered renderer
+    /// shows first. Leave unset to extract structure for every matched file.
+    #[arg(long = "max-structure-files")]
+    pub max_structure_files: Option<usize>,
+
     /// Optional root path to search instead of the current directory.
     #[arg(long)]
     pub path: Option<String>,

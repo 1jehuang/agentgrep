@@ -182,8 +182,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
             &file,
             &structure.items,
             &lower_lines,
-            &subject_lower,
-            &subject_tokens,
+            (&subject_lower, &subject_tokens),
             &query.relation,
             args,
             context.as_ref(),
@@ -270,12 +269,12 @@ fn build_regions(
     file: &TextFile,
     items: &[StructureItem],
     lower_lines: &[String],
-    subject_lower: &str,
-    subject_tokens: &[String],
+    subject: (&str, &[String]),
     relation: &Relation,
     args: &SmartArgs,
     context: Option<&HarnessContext>,
 ) -> Vec<SmartRegion> {
+    let (subject_lower, subject_tokens) = subject;
     let relation_terms = relation_terms(relation);
     let lines = file.text.lines().collect::<Vec<_>>();
 
@@ -307,7 +306,7 @@ fn build_regions(
             continue;
         }
 
-        let mut score = 80 + (subject_line_hit_count as i32 * 10);
+        let mut score = 80 + (subject_line_hit_count * 10);
         let mut why = Vec::new();
         if subject_line_hit_count > 0 {
             why.push("exact subject match".to_string());

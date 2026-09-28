@@ -33,8 +33,14 @@ pub fn render_grep_output(
     let mut lines = vec![
         format!("query: {}", result.query),
         format!(
-            "matches: {} in {} files",
-            result.total_matches, result.total_files
+            "matches: {}{} in {} files",
+            if args.max_matches_per_file.is_some() {
+                "at least "
+            } else {
+                ""
+            },
+            result.total_matches,
+            result.total_files
         ),
     ];
     let mut state = GrepRenderState::new(max_matches);
@@ -46,15 +52,20 @@ pub fn render_grep_output(
         render_grep_file(file, args, &mut lines, &mut state);
     }
 
-    if let Some(max) = max_matches {
-        if result.total_matches > state.displayed_matches {
-            lines.push(String::new());
-            lines.push(format!(
-                "... {} more matches omitted (max_regions={})",
-                result.total_matches.saturating_sub(state.displayed_matches),
-                max
-            ));
-        }
+    if let Some(max) = max_matches
+        && result.total_matches > state.displayed_matches
+    {
+        lines.push(String::new());
+        lines.push(format!(
+            "... {}{} more matches omitted (max_regions={})",
+            if args.max_matches_per_file.is_some() {
+                "at least "
+            } else {
+                ""
+            },
+            result.total_matches.saturating_sub(state.displayed_matches),
+            max
+        ));
     }
 
     lines.join("\n")
@@ -151,7 +162,12 @@ fn render_grep_file(
         && file.matches.len() > file_displayed_matches
     {
         lines.push(format!(
-            "    - ... {} more non-code matches omitted; narrow path/glob/type or use paths_only for full file list",
+            "    - ... {}{} more non-code matches omitted; narrow path/glob/type or use paths_only for full file list",
+            if args.max_matches_per_file.is_some() {
+                "at least "
+            } else {
+                ""
+            },
             file.matches.len().saturating_sub(file_displayed_matches)
         ));
     }
@@ -192,9 +208,7 @@ pub fn compact_rendered_match_line(line: &str, args: &GrepArgs) -> String {
         return line.to_string();
     }
 
-    let match_start_char = if args.regex {
-        0
-    } else if args.query.is_empty() {
+    let match_start_char = if args.regex || args.query.is_empty() {
         0
     } else {
         line.find(&args.query)
@@ -473,6 +487,9 @@ fn render_smart_region(region: &SmartRegion, debug_score: bool, lines: &mut Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::search::run_grep;
+    use std::fs;
+    use tempfile::tempdir;
 
     fn grep_args(query: &str) -> GrepArgs {
         GrepArgs {
@@ -486,7 +503,44 @@ mod tests {
             path: None,
             glob: None,
             no_follow: false,
+            max_matches_per_file: None,
+            max_structure_files: None,
         }
+    }
+
+    #[test]
+    fn capped_search_reports_lower_bound_counts_but_uncapped_search_is_exact() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("many.txt"), "needle\n".repeat(6)).unwrap();
+
+        let mut args = grep_args("needle");
+        args.max_matches_per_file = Some(2);
+        let capped = run_grep(dir.path(), &args).unwrap();
+        assert_eq!(capped.total_matches, 2);
+        let output = render_grep_output(&capped, &args, Some(1));
+        assert!(
+            output.contains("matches: at least 2 in 1 files"),
+            "{output}"
+        );
+        assert!(
+            output.contains("at least 1 more matches omitted"),
+            "{output}"
+        );
+
+        args.max_matches_per_file = Some(4);
+        let capped = run_grep(dir.path(), &args).unwrap();
+        let output = render_grep_output(&capped, &args, Some(5));
+        assert!(
+            output.contains("at least 1 more non-code matches omitted"),
+            "{output}"
+        );
+
+        args.max_matches_per_file = None;
+        let uncapped = run_grep(dir.path(), &args).unwrap();
+        let output = render_grep_output(&uncapped, &args, Some(1));
+        assert!(output.contains("matches: 6 in 1 files"), "{output}");
+        assert!(output.contains("5 more matches omitted"), "{output}");
+        assert!(!output.contains("at least"), "{output}");
     }
 
     #[test]

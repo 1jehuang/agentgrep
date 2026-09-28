@@ -139,6 +139,25 @@ src/auth/mod.rs
 
 `rg` optimizes for raw match streaming. `agentgrep grep` keeps exact semantics, but returns a more agent-ready packet:
 
+### Bounding work for harness integrations
+
+By default, `grep` remains exhaustive and attaches symbol structure to every
+matched file. Harnesses that render only a bounded result packet can avoid work
+they will discard:
+
+```bash
+agentgrep grep config --max-count 3 --max-structure-files 25
+```
+
+- `--max-count N` stops after N matches **per file**. Files and matches within
+  that bound are preserved, but `total_matches` becomes a lower bound.
+- `--max-structure-files N` attaches symbol/grouping metadata only to the first
+  N matched files in deterministic result order. Every file and lexical match
+  is still returned; later files use file-scope grouping without an outline.
+
+Both options are off by default, preserving exact counts and full structure.
+They are most useful together with a consumer-side output cap.
+
 - grouped by file
 - grouped by enclosing symbol when possible
 - preserves exact matching lines

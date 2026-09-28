@@ -152,7 +152,7 @@ fn resolve_display_disambiguated_path(root: &Path, requested: &str) -> Option<Pa
     exact.or(if lossy_ambiguous { None } else { lossy })
 }
 
-fn file_not_found_error(root: &Path, requested: &str, resolved: &PathBuf) -> String {
+fn file_not_found_error(root: &Path, requested: &str, resolved: &Path) -> String {
     let mut message = format!("file not found: {}", resolved.display());
     let suggestions = suggest_similar_files(root, requested);
     if !suggestions.is_empty() {
@@ -486,6 +486,12 @@ mod tests {
         use std::os::unix::ffi::OsStrExt;
 
         let dir = tempdir().unwrap();
+        if !crate::test_support::supports_non_utf8_filenames(dir.path()) {
+            crate::test_support::skip_non_utf8(
+                "outline_context_keys_on_disambiguated_path_for_non_utf8_names",
+            );
+            return;
+        }
         let body = (0..12)
             .map(|i| format!("def f{i}():\n    return {i}\n"))
             .collect::<String>();
