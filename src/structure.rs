@@ -49,8 +49,8 @@ fn detect_language(path: &Path) -> &'static str {
         .unwrap_or_default()
     {
         "rs" => "rust",
-        "ts" | "tsx" => "typescript",
-        "js" | "jsx" => "javascript",
+        "ts" | "tsx" | "mts" | "cts" => "typescript",
+        "js" | "jsx" | "mjs" | "cjs" => "javascript",
         "py" => "python",
         "md" => "markdown",
         "json" => "json",
@@ -426,6 +426,38 @@ mod tests {
                 .iter()
                 .any(|item| item.label == "Renderable")
         );
+    }
+
+    #[test]
+    fn treats_esm_and_commonjs_extensions_as_javascript_and_typescript() {
+        let js = "export function loadConfig() {}\nexport class Registry {}\n";
+        for name in ["lib/config.mjs", "lib/config.cjs"] {
+            let structure = extract_file_structure(Path::new(name), name, js);
+            assert_eq!(structure.language, "javascript", "{name}");
+            assert!(
+                structure
+                    .items
+                    .iter()
+                    .any(|item| item.label == "loadConfig"),
+                "{name}"
+            );
+            assert!(
+                structure.items.iter().any(|item| item.label == "Registry"),
+                "{name}"
+            );
+        }
+        let ts = "export function loadConfig(): void {}\n";
+        for name in ["lib/config.mts", "lib/config.cts"] {
+            let structure = extract_file_structure(Path::new(name), name, ts);
+            assert_eq!(structure.language, "typescript", "{name}");
+            assert!(
+                structure
+                    .items
+                    .iter()
+                    .any(|item| item.label == "loadConfig"),
+                "{name}"
+            );
+        }
     }
 
     #[test]

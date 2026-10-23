@@ -861,8 +861,8 @@ fn infer_language(path: &Path) -> String {
         .unwrap_or_default()
     {
         "rs" => "rust",
-        "ts" | "tsx" => "typescript",
-        "js" | "jsx" => "javascript",
+        "ts" | "tsx" | "mts" | "cts" => "typescript",
+        "js" | "jsx" | "mjs" | "cjs" => "javascript",
         "py" => "python",
         "md" => "markdown",
         "json" => "json",
@@ -1112,6 +1112,16 @@ mod tests {
             .find(|(key, _)| key.display == name)
             .map(|(_, matches)| matches)
             .unwrap_or_else(|| panic!("no entry with display path {name:?}"))
+    }
+
+    #[test]
+    fn infers_javascript_and_typescript_for_esm_and_commonjs_extensions() {
+        for name in ["a.js", "a.jsx", "a.mjs", "a.cjs"] {
+            assert_eq!(infer_language(Path::new(name)), "javascript", "{name}");
+        }
+        for name in ["a.ts", "a.tsx", "a.mts", "a.cts"] {
+            assert_eq!(infer_language(Path::new(name)), "typescript", "{name}");
+        }
     }
 
     #[test]
