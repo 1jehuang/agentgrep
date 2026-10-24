@@ -63,6 +63,31 @@ Current properties:
 - plain text output by default
 - JSON output for automation
 
+## Search resource safety
+
+Searches have finite per-call budgets rather than buffering arbitrary subprocess
+output or retaining an entire large directory tree. Default limits include a
+30-second deadline, 16 MiB of subprocess stdout, 1 MiB of stderr, 8 MiB per source
+file, 64 MiB of cumulative source reads, 100,000 visited directory entries and
+100,000 matches. Individual lines and per-file line counts are bounded too.
+These are input/work budgets, not a promise that total process RSS equals a
+particular byte count.
+
+A budget failure is an error, not an empty search result or silently truncated
+success. Narrow the path, glob, or file type and retry. Grep and find retain their
+existing symlink-following default; use `--no-follow` to avoid traversing linked
+external trees or Windows junctions.
+
+Library hosts can install `control::SearchControl` with
+`control::with_search_control` inside their blocking worker and set its shared
+atomic cancellation token from the owning task. Cancellation and resource
+failures terminate and reap the ripgrep child. Native scans check the same
+control between traversal, read, and processing steps. Cancelling a host's async
+task alone is not sufficient unless the host also signals this token.
+
+`find::run_find` now returns `Result<FindResult, String>` so library callers can
+handle budget and cancellation failures just like grep, outline, and trace.
+
 ## Demo: `rg` vs `agentgrep` navigation race
 
 I ran the same code-navigation task twice in `jcode`:
