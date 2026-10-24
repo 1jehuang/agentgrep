@@ -26,5 +26,33 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Test search and subprocess resource limits
+      - name: Install ripgrep (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y ripgrep
+      - name: Install ripgrep (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
+            choco install ripgrep --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          rg --version
+      - name: Run all tests (Linux)
+        if: runner.os == 'Linux'
         run: cargo test --all-targets
+      - name: Run native resource safety tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $filters = @(
+            'capture::tests::',
+            'search::tests::native_parallel_workers_share_aggregate_read_and_match_limits',
+            'search::tests::rg_output_exhaustion_never_falls_back_to_native_scan'
+          )
+          foreach ($filter in $filters) {
+            cargo test --lib $filter -- --nocapture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          cargo test --test resource_limits -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
