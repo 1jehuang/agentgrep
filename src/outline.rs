@@ -27,6 +27,10 @@ pub struct OutlineStructure {
 }
 
 pub fn run_outline(root: &Path, args: &OutlineArgs) -> Result<OutlineResult, String> {
+    crate::control::scoped(|| run_outline_inner(root, args))
+}
+
+fn run_outline_inner(root: &Path, args: &OutlineArgs) -> Result<OutlineResult, String> {
     let file_path = resolve_outline_path(root, &args.file);
     // Display-path resolution runs BEFORE the verbatim exists() fast path
     // (it is a no-op for requests without U+FFFD): the disambiguated display

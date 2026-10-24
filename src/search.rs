@@ -151,6 +151,13 @@ impl MatchGroup {
 }
 
 pub fn run_grep(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
+    crate::control::scoped(|| run_grep_inner(root, args))
+}
+
+fn run_grep_inner(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
+    // Validate even paths-only queries before asking rg, keeping diagnostics
+    // independent of backend availability.
+    let _ = Matcher::new(&args.query, args.regex)?;
     if let Some(result) = run_grep_with_rg(root, args)? {
         return Ok(result);
     }
@@ -172,6 +179,7 @@ fn run_grep_native(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
     let worker_count = thread::available_parallelism()
         .map(|parallelism| parallelism.get())
         .unwrap_or(1)
+        .min(8)
         .min(files.len().max(1));
 
     let mut results = Vec::new();
@@ -179,6 +187,7 @@ fn run_grep_native(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
 
     if worker_count <= 1 || files.len() <= 8 {
         for entry in files {
+            crate::control::checkpoint()?;
             if let Some(file_matches) = process_file(entry, &matcher) {
                 total_matches += file_matches.matches.len();
                 results.push(file_matches);
@@ -190,16 +199,22 @@ fn run_grep_native(root: &Path, args: &GrepArgs) -> Result<GrepResult, String> {
             let mut handles = Vec::new();
             for chunk in files.chunks(chunk_size) {
                 let matcher = matcher.clone();
+                let control = crate::control::current();
                 handles.push(scope.spawn(move || {
-                    let mut partial = Vec::new();
-                    let mut partial_total = 0;
-                    for entry in chunk.iter().cloned() {
-                        if let Some(file_matches) = process_file(entry, &matcher) {
-                            partial_total += file_matches.matches.len();
-                            partial.push(file_matches);
+                    crate::control::inherited(control, || {
+                        let mut partial = Vec::new();
+                        let mut partial_total = 0;
+                        for entry in chunk.iter().cloned() {
+                            if crate::control::checkpoint().is_err() {
+                                break;
+                            }
+                            if let Some(file_matches) = process_file(entry, &matcher) {
+                                partial_total += file_matches.matches.len();
+                                partial.push(file_matches);
+                            }
                         }
-                    }
-                    (partial, partial_total)
+                        (partial, partial_total)
+                    })
                 }));
             }
 
@@ -291,12 +306,14 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
     let worker_count = thread::available_parallelism()
         .map(|parallelism| parallelism.get())
         .unwrap_or(1)
+        .min(8)
         .min(matched_files.len().max(1));
 
     let mut results = Vec::with_capacity(matched_files.len());
     let mut total_matches = 0;
     if worker_count <= 1 || matched_files.len() <= 8 {
         for (path, matches) in matched_files {
+            crate::control::checkpoint()?;
             if let Some(file_matches) = process_rg_match_file(root, path, matches) {
                 total_matches += file_matches.matches.len();
                 results.push(file_matches);
@@ -307,16 +324,22 @@ fn run_grep_with_rg(root: &Path, args: &GrepArgs) -> Result<Option<GrepResult>, 
         let partials = thread::scope(|scope| {
             let mut handles = Vec::new();
             for chunk in matched_files.chunks(chunk_size) {
+                let control = crate::control::current();
                 handles.push(scope.spawn(move || {
-                    let mut partial = Vec::new();
-                    let mut partial_total = 0;
-                    for (path, matches) in chunk.iter().cloned() {
-                        if let Some(file_matches) = process_rg_match_file(root, path, matches) {
-                            partial_total += file_matches.matches.len();
-                            partial.push(file_matches);
+                    crate::control::inherited(control, || {
+                        let mut partial = Vec::new();
+                        let mut partial_total = 0;
+                        for (path, matches) in chunk.iter().cloned() {
+                            if crate::control::checkpoint().is_err() {
+                                break;
+                            }
+                            if let Some(file_matches) = process_rg_match_file(root, path, matches) {
+                                partial_total += file_matches.matches.len();
+                                partial.push(file_matches);
+                            }
                         }
-                    }
-                    (partial, partial_total)
+                        (partial, partial_total)
+                    })
                 }));
             }
 
@@ -358,20 +381,24 @@ fn run_rg_paths_only(root: &Path, args: &GrepArgs) -> Result<Option<Vec<RgDispla
     command.arg("--null");
     command.arg(".");
 
-    let output = match command.output() {
+    let output = match crate::capture::output(&mut command) {
         Ok(output) => output,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(err) => return Err(format!("failed to execute rg: {err}")),
     };
 
     match output.status.code() {
-        // Exit 2 with results on stdout means rg hit per-file errors (for
-        // example broken symlinks with --follow) but still searched the rest;
-        // treat the partial output as authoritative. Exit 2 with no output is
-        // ambiguous (could be a fatal error), so fall back to the native path.
+        // --no-messages suppresses ordinary per-file errors such as broken
+        // symlinks. Preserve those results, including a legitimate empty set,
+        // without restarting a native scan. Unsuppressed diagnostics are fatal.
         Some(0) | Some(1) => {}
-        Some(2) if !output.stdout.is_empty() => {}
-        Some(2) => return Ok(None),
+        Some(2) if output.stderr.is_empty() => {}
+        Some(2) => {
+            return Err(format!(
+                "rg failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
         Some(code) => {
             return Err(format!(
                 "rg failed with exit code {code}: {}",
@@ -384,12 +411,15 @@ fn run_rg_paths_only(root: &Path, args: &GrepArgs) -> Result<Option<Vec<RgDispla
     // Keep the raw bytes from rg's NUL-separated output: sort on them so tie
     // order between lossy-colliding names is byte-deterministic, and derive
     // the disambiguated display string plus hex bytes from them.
-    let mut raw_paths = output
+    let mut raw_paths = Vec::new();
+    for path in output
         .stdout
         .split(|byte| *byte == b'\0')
-        .filter(|path| !path.is_empty())
-        .map(|path| path.strip_prefix(b"./".as_slice()).unwrap_or(path).to_vec())
-        .collect::<Vec<_>>();
+        .filter(|p| !p.is_empty())
+    {
+        crate::control::charge("entries", 1)?;
+        raw_paths.push(path.strip_prefix(b"./".as_slice()).unwrap_or(path).to_vec());
+    }
     raw_paths.sort();
     let paths = raw_paths
         .into_iter()
@@ -423,6 +453,7 @@ fn run_rg_match_map(
             match parse_rg_plain(&output.stdout, &matcher) {
                 Ok(match_map) => return Ok(Some(match_map)),
                 Err(_) => {
+                    crate::control::checkpoint()?;
                     let Some(json_output) = run_rg_json_search(root, args)? else {
                         return Ok(None);
                     };
@@ -463,7 +494,7 @@ fn run_rg_json_search(
 }
 
 fn run_rg_output(mut command: Command) -> Result<Option<std::process::Output>, String> {
-    let output = match command.output() {
+    let output = match crate::capture::output(&mut command) {
         Ok(output) => output,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(err) => return Err(format!("failed to execute rg: {err}")),
@@ -471,12 +502,14 @@ fn run_rg_output(mut command: Command) -> Result<Option<std::process::Output>, S
 
     match output.status.code() {
         Some(0) | Some(1) => Ok(Some(output)),
-        // Exit 2 with results on stdout means rg hit per-file errors (for
-        // example broken symlinks with --follow) but still searched the rest.
-        // Exit 2 with no output is ambiguous (could be a fatal error such as a
-        // bad pattern), so return None to fall back to the native path.
-        Some(2) if !output.stdout.is_empty() => Ok(Some(output)),
-        Some(2) => Ok(None),
+        // With --no-messages, an empty stderr on exit 2 represents suppressed
+        // per-file errors (notably broken links). Keep even empty results and
+        // never retry the entire tree. Unsuppressed errors may be exhaustion.
+        Some(2) if output.stderr.is_empty() => Ok(Some(output)),
+        Some(2) => Err(format!(
+            "rg failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )),
         Some(code) => Err(format!(
             "rg failed with exit code {code}: {}",
             String::from_utf8_lossy(&output.stderr)
@@ -544,6 +577,7 @@ fn parse_rg_plain(
     let mut matches_by_path: BTreeMap<RgPathKey, Vec<LineMatch>> = BTreeMap::new();
 
     for line in text.lines() {
+        crate::control::charge("matches", 1)?;
         if line.is_empty() {
             continue;
         }
@@ -563,13 +597,14 @@ fn parse_rg_plain(
         let line_number = line_number
             .parse::<usize>()
             .map_err(|err| format!("failed to parse rg line number: {err}"))?;
-        matches_by_path
-            .entry(RgPathKey::from_bytes(path.as_bytes()))
-            .or_default()
-            .push(LineMatch {
-                line_number,
-                line_text: matcher.display_line_text(line_text),
-            });
+        let key = RgPathKey::from_bytes(path.as_bytes());
+        if !matches_by_path.contains_key(&key) {
+            crate::control::charge("entries", 1)?;
+        }
+        matches_by_path.entry(key).or_default().push(LineMatch {
+            line_number,
+            line_text: matcher.display_line_text(line_text),
+        });
     }
 
     Ok(matches_by_path)
@@ -582,6 +617,7 @@ fn parse_rg_json(
     let mut matches_by_path: BTreeMap<RgPathKey, Vec<LineMatch>> = BTreeMap::new();
 
     for line in stdout.split(|byte| *byte == b'\n') {
+        crate::control::checkpoint()?;
         if line.is_empty() {
             continue;
         }
@@ -593,6 +629,7 @@ fn parse_rg_json(
         if event.kind != "match" {
             continue;
         }
+        crate::control::charge("matches", 1)?;
         // rg --json emits {"text": ...} for UTF-8 fields and {"bytes": base64}
         // for fields containing invalid UTF-8. Accept both so a single binary
         // match line (or a non-UTF-8 filename) cannot fail the whole grep.
@@ -606,13 +643,14 @@ fn parse_rg_json(
             return Err("rg json output did not include line text".to_string());
         };
         let line_text = String::from_utf8_lossy(&line_bytes);
-        matches_by_path
-            .entry(RgPathKey::from_bytes(&path_bytes))
-            .or_default()
-            .push(LineMatch {
-                line_number,
-                line_text: matcher.display_line_text(line_text.trim_end_matches(['\n', '\r'])),
-            });
+        let key = RgPathKey::from_bytes(&path_bytes);
+        if !matches_by_path.contains_key(&key) {
+            crate::control::charge("entries", 1)?;
+        }
+        matches_by_path.entry(key).or_default().push(LineMatch {
+            line_number,
+            line_text: matcher.display_line_text(line_text.trim_end_matches(['\n', '\r'])),
+        });
     }
 
     Ok(matches_by_path)
@@ -729,6 +767,7 @@ fn process_rg_match_file(
     path: RgPathKey,
     matches: Vec<LineMatch>,
 ) -> Option<FileMatches> {
+    crate::control::checkpoint().ok()?;
     let absolute_path = path.to_absolute(root);
     // Role/structure inference uses the plain lossy path; the emitted `path`
     // is the disambiguated display path, unique across lossy collisions.
@@ -796,7 +835,9 @@ fn process_file(entry: crate::workspace::FileEntry, matcher: &Matcher) -> Option
 
     let mut matches = Vec::new();
     for (idx, line) in text.lines().enumerate() {
+        crate::control::checkpoint().ok()?;
         if matcher.is_match(line) {
+            crate::control::charge("matches", 1).ok()?;
             matches.push(LineMatch {
                 line_number: idx + 1,
                 line_text: matcher.display_line_text(line),
@@ -1104,6 +1145,69 @@ mod tests {
         }
     }
 
+    #[test]
+    fn native_parallel_workers_share_aggregate_read_and_match_limits() {
+        use crate::control::{SearchControl, SearchLimits, with_search_control};
+        use std::sync::{Arc, atomic::AtomicBool};
+        let dir = tempdir().unwrap();
+        for index in 0..16 {
+            fs::write(
+                dir.path().join(format!("{index}.txt")),
+                "needle\n".repeat(32),
+            )
+            .unwrap();
+        }
+        for (limits, expected) in [
+            (
+                SearchLimits {
+                    max_total_read_bytes: 300,
+                    ..SearchLimits::default()
+                },
+                "read bytes",
+            ),
+            (
+                SearchLimits {
+                    max_matches: 40,
+                    ..SearchLimits::default()
+                },
+                "matches",
+            ),
+        ] {
+            let error = with_search_control(
+                SearchControl::new(Arc::new(AtomicBool::new(false)), limits),
+                || run_grep_native(dir.path(), &grep_args("needle")),
+            )
+            .unwrap_err();
+            assert!(error.contains(expected), "{error}");
+        }
+    }
+
+    #[test]
+    fn rg_output_exhaustion_never_falls_back_to_native_scan() {
+        use crate::control::{SearchControl, SearchLimits, with_search_control};
+        use std::sync::{Arc, atomic::AtomicBool};
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("needle.txt"), "needle\n".repeat(1024)).unwrap();
+        for paths_only in [false, true] {
+            let mut args = grep_args("needle");
+            args.paths_only = paths_only;
+            let limits = SearchLimits {
+                max_output_bytes: 1,
+                max_total_read_bytes: 0,
+                ..SearchLimits::default()
+            };
+            let result = with_search_control(
+                SearchControl::new(Arc::new(AtomicBool::new(false)), limits),
+                || run_grep_with_rg(dir.path(), &args),
+            );
+            match result {
+                Ok(Ok(None)) => return, // rg is not installed on this host.
+                Err(error) => assert!(error.contains("stdout bytes"), "{error}"),
+                other => panic!("unexpected result: {other:?}"),
+            }
+        }
+    }
+
     fn by_display<'a>(
         map: &'a BTreeMap<RgPathKey, Vec<LineMatch>>,
         name: &str,
@@ -1326,13 +1430,14 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(paths, expected);
 
-            // Broken symlink plus zero matches: rg exits 2 with empty stdout,
-            // which must fall back (None) rather than hard-error.
+            // Broken symlink plus zero matches: rg exits 2 with suppressed
+            // diagnostics. Preserve the empty result without a fallback scan.
             let no_match_args = grep_args("zz_absent_needle");
             assert!(
                 run_rg_paths_only(dir.path(), &no_match_args)
                     .unwrap()
-                    .is_none()
+                    .expect("rg should be available")
+                    .is_empty()
             );
             let full = run_grep(dir.path(), &no_match_args).unwrap();
             assert_eq!(full.total_files, 0);
@@ -1947,7 +2052,13 @@ mod tests {
     fn glob_semantics_match_rg_dash_g() {
         let dir = tempdir().unwrap();
         fs::create_dir_all(dir.path().join("src/sub")).unwrap();
-        for name in ["main.rs", "notes.log", "src/main.rs", "src/lib.rs", "src/sub/deep.rs"] {
+        for name in [
+            "main.rs",
+            "notes.log",
+            "src/main.rs",
+            "src/lib.rs",
+            "src/sub/deep.rs",
+        ] {
             fs::write(dir.path().join(name), "needle_glob\n").unwrap();
         }
 
@@ -1959,8 +2070,7 @@ mod tests {
                 native.files.iter().map(|f| f.path.clone()).collect();
             native_paths.sort();
             if let Some(rg) = run_grep_with_rg(dir.path(), &args).unwrap() {
-                let mut rg_paths: Vec<String> =
-                    rg.files.iter().map(|f| f.path.clone()).collect();
+                let mut rg_paths: Vec<String> = rg.files.iter().map(|f| f.path.clone()).collect();
                 rg_paths.sort();
                 assert_eq!(
                     native_paths, rg_paths,
@@ -1999,8 +2109,7 @@ mod tests {
         args.glob = Some("src/*".to_string());
 
         let native = run_grep_native(dir.path(), &args).unwrap();
-        let mut native_paths: Vec<String> =
-            native.files.iter().map(|f| f.path.clone()).collect();
+        let mut native_paths: Vec<String> = native.files.iter().map(|f| f.path.clone()).collect();
         native_paths.sort();
         assert_eq!(native_paths, vec!["src/inner.rs"]);
 

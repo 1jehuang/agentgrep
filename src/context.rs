@@ -101,8 +101,8 @@ impl HarnessContext {
         let Some(path) = path else {
             return Ok(None);
         };
-        let data = std::fs::read_to_string(path)
-            .map_err(|err| format!("failed to read context file {}: {}", path, err))?;
+        let data = crate::workspace::read_text_file(Path::new(path))
+            .ok_or_else(|| format!("failed to read context file {path}"))?;
         let mut context: Self = serde_json::from_str(&data)
             .map_err(|err| format!("failed to parse context file {}: {}", path, err))?;
         context.rebuild_indexes();

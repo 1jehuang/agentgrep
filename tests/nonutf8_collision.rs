@@ -179,7 +179,7 @@ fn grep_paths_only_emits_unique_display_paths() {
 #[test]
 fn find_emits_unique_display_paths_for_colliders() {
     let dir = collision_corpus(true);
-    let result = run_find(dir.path(), &find_args(&["collide"]));
+    let result = run_find(dir.path(), &find_args(&["collide"])).unwrap();
 
     let paths: Vec<&str> = result.files.iter().map(|f| f.path.as_str()).collect();
     assert_unique(paths.iter().copied(), "find");
@@ -229,6 +229,7 @@ fn result_order_is_stable_across_creation_orders() {
     // find
     let find_paths = |root: &Path| {
         run_find(root, &find_args(&["collide"]))
+            .unwrap()
             .files
             .into_iter()
             .map(|f| f.path)

@@ -175,7 +175,7 @@ fn combined_decoys_are_separately_addressable_in_all_modes() {
     }
 
     // find: same three distinct paths.
-    let find = run_find(root, &find_args(&["a"]));
+    let find = run_find(root, &find_args(&["a"])).unwrap();
     let find_paths: HashSet<String> = find.files.iter().map(|f| f.path.clone()).collect();
     for path in expected.keys() {
         assert!(
@@ -311,7 +311,7 @@ fn fuzz_random_byte_names_have_injective_resolvable_displays() {
     }
 
     // Cross-check against what the walker actually emits.
-    let find = run_find(root, &find_args(&["rs"]));
+    let find = run_find(root, &find_args(&["rs"])).unwrap();
     // find caps results; use grep paths_only-style uniqueness on the full
     // corpus via outline resolution below instead. Still assert find's own
     // returned paths are unique.
@@ -346,7 +346,7 @@ fn walker_display_matches_direct_function_for_literal_fffd_names() {
     let name = "solo\u{FFFD}.rs";
     fs::write(root.join(name), "fn solo_literal() {}\n").unwrap();
 
-    let find = run_find(root, &find_args(&["solo"]));
+    let find = run_find(root, &find_args(&["solo"])).unwrap();
     assert_eq!(find.files.len(), 1);
     assert_eq!(find.files[0].path, "solo\u{FFFD}.rs#b=-");
     assert_eq!(find.files[0].path, display_for(name.as_bytes()));
@@ -360,4 +360,3 @@ fn walker_display_matches_direct_function_for_literal_fffd_names() {
             .any(|i| i.label == "solo_literal")
     );
 }
-

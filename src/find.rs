@@ -31,7 +31,11 @@ pub struct FindStructure {
     pub omitted_count: usize,
 }
 
-pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
+pub fn run_find(root: &Path, args: &FindArgs) -> Result<FindResult, String> {
+    crate::control::scoped(|| run_find_inner(root, args))
+}
+
+fn run_find_inner(root: &Path, args: &FindArgs) -> Result<FindResult, String> {
     let query = args.query_parts.join(" ");
     let query_lower = query.to_ascii_lowercase();
     let query_tokens = tokenize_query(&query);
@@ -47,6 +51,7 @@ pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
 
     let mut files = Vec::new();
     for file in collect_file_entries(&scope) {
+        crate::control::checkpoint()?;
         let relative_lower = file.relative_path.to_ascii_lowercase();
         if !has_path_evidence(&query_lower, &query_tokens, &relative_lower) {
             continue;
@@ -91,11 +96,11 @@ pub fn run_find(root: &Path, args: &FindArgs) -> FindResult {
     files.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.path.cmp(&b.path)));
     files.truncate(args.max_files);
 
-    FindResult {
+    Ok(FindResult {
         query,
         root: root.display().to_string(),
         files,
-    }
+    })
 }
 
 fn has_path_evidence(query_lower: &str, query_tokens: &[String], relative_lower: &str) -> bool {
@@ -235,7 +240,7 @@ mod tests {
             no_follow: false,
         };
 
-        let result = run_find(dir.path(), &args);
+        let result = run_find(dir.path(), &args).unwrap();
         assert!(!result.files.is_empty());
         assert_eq!(result.files[0].path, "src/auth/mod.rs");
     }
@@ -279,9 +284,8 @@ mod tests {
         };
 
         // Default (follow): the symlinked directory's file is found.
-        let followed = run_find(dir.path(), &args);
-        let followed_paths: Vec<&str> =
-            followed.files.iter().map(|f| f.path.as_str()).collect();
+        let followed = run_find(dir.path(), &args).unwrap();
+        let followed_paths: Vec<&str> = followed.files.iter().map(|f| f.path.as_str()).collect();
         assert!(
             followed_paths.contains(&"linked_auth/auth_status.rs"),
             "default find should follow dir symlinks, got {followed_paths:?}"
@@ -290,7 +294,7 @@ mod tests {
 
         // --no-follow: only the local file remains.
         args.no_follow = true;
-        let unfollowed = run_find(dir.path(), &args);
+        let unfollowed = run_find(dir.path(), &args).unwrap();
         let unfollowed_paths: Vec<&str> =
             unfollowed.files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(unfollowed_paths, vec!["src/auth_status_local.rs"]);
@@ -339,7 +343,7 @@ mod tests {
             no_follow: true,
         };
 
-        let result = run_find(dir.path(), &args);
+        let result = run_find(dir.path(), &args).unwrap();
         let paths: Vec<&str> = result.files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(paths, vec!["src/auth_status_local.rs"]);
     }
@@ -365,7 +369,7 @@ mod tests {
             no_follow: false,
         };
 
-        let result = run_find(dir.path(), &args);
+        let result = run_find(dir.path(), &args).unwrap();
         assert!(result.files.iter().all(|f| f.path != "src/app.rs"));
     }
 
@@ -399,7 +403,7 @@ mod tests {
             no_follow: false,
         };
 
-        let result = run_find(dir.path(), &args);
+        let result = run_find(dir.path(), &args).unwrap();
         assert_eq!(result.files[0].path, "src/tool/debug_socket.rs");
     }
 }

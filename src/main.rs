@@ -43,7 +43,10 @@ fn main() {
         }
         Command::Find(args) => {
             let root = resolve_root(&args.path);
-            let result = run_find(&root, &args);
+            let result = run_find(&root, &args).unwrap_or_else(|err| {
+                eprintln!("error: {err}");
+                std::process::exit(2);
+            });
             if args.json {
                 println!(
                     "{}",

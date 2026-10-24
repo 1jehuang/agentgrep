@@ -62,6 +62,14 @@ pub struct SmartRegion {
 }
 
 pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<SmartResult, String> {
+    crate::control::scoped(|| run_smart_inner(root, query, args))
+}
+
+fn run_smart_inner(
+    root: &Path,
+    query: &SmartQuery,
+    args: &SmartArgs,
+) -> Result<SmartResult, String> {
     let scope = SearchScope {
         root,
         file_type: args.file_type.as_deref(),
@@ -84,6 +92,7 @@ pub fn run_smart(root: &Path, query: &SmartQuery, args: &SmartArgs) -> Result<Sm
 
     let mut files = Vec::new();
     for entry in collect_file_entries(&scope) {
+        crate::control::checkpoint()?;
         let relative_lower = entry.relative_path.to_ascii_lowercase();
         if let Some(path_hint) = &path_hint
             && !relative_lower.contains(path_hint)
@@ -281,6 +290,9 @@ fn build_regions(
 
     let mut regions = Vec::new();
     for item in items {
+        if crate::control::checkpoint().is_err() {
+            break;
+        }
         let start_idx = item.start_line.saturating_sub(1);
         let end_idx = item.end_line.min(lines.len());
         if start_idx >= end_idx {

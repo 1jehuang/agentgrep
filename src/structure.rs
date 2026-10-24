@@ -85,6 +85,9 @@ pub(crate) fn infer_role(relative_path: &str) -> String {
 fn extract_rust(text: &str) -> Vec<StructureItem> {
     let mut items = Vec::new();
     for (idx, line) in text.lines().enumerate() {
+        if crate::control::checkpoint().is_err() {
+            break;
+        }
         let line_number = idx + 1;
         let trimmed = line.trim_start();
 
@@ -114,6 +117,9 @@ fn extract_rust(text: &str) -> Vec<StructureItem> {
 fn extract_ts_js(text: &str) -> Vec<StructureItem> {
     let mut items = Vec::new();
     for (idx, line) in text.lines().enumerate() {
+        if crate::control::checkpoint().is_err() {
+            break;
+        }
         let line_number = idx + 1;
         let mut trimmed = line.trim_start();
         trimmed = strip_keyword_prefix(trimmed, "export")
@@ -142,6 +148,9 @@ fn extract_ts_js(text: &str) -> Vec<StructureItem> {
 fn extract_python(text: &str) -> Vec<StructureItem> {
     let mut items = Vec::new();
     for (idx, line) in text.lines().enumerate() {
+        if crate::control::checkpoint().is_err() {
+            break;
+        }
         let line_number = idx + 1;
         let trimmed = line.trim_start();
         if let Some(label) = parse_keyword_identifier(trimmed, "def") {
@@ -158,6 +167,9 @@ fn extract_python(text: &str) -> Vec<StructureItem> {
 fn extract_markdown(text: &str) -> Vec<StructureItem> {
     let mut items = Vec::new();
     for (idx, line) in text.lines().enumerate() {
+        if crate::control::checkpoint().is_err() {
+            break;
+        }
         let bytes = line.as_bytes();
         let level = bytes.iter().take_while(|&&byte| byte == b'#').count();
         if level == 0 || bytes.get(level).copied() != Some(b' ') {
@@ -166,6 +178,9 @@ fn extract_markdown(text: &str) -> Vec<StructureItem> {
         let label = line[level + 1..].trim();
         if label.is_empty() {
             continue;
+        }
+        if crate::control::charge("structure items", 1).is_err() {
+            break;
         }
         items.push(StructureItem {
             kind: format!("heading{level}"),
@@ -181,6 +196,9 @@ fn extract_markdown(text: &str) -> Vec<StructureItem> {
 fn extract_generic(text: &str) -> Vec<StructureItem> {
     let mut items = Vec::new();
     for (idx, line) in text.lines().enumerate() {
+        if crate::control::checkpoint().is_err() {
+            break;
+        }
         let trimmed = line.trim();
         if is_generic_section(trimmed) {
             items.push(structure_item("section", trimmed, idx + 1));
@@ -342,6 +360,9 @@ fn is_generic_section(line: &str) -> bool {
 }
 
 fn structure_item(kind: &str, label: &str, line_number: usize) -> StructureItem {
+    // The caller checks the sticky error on the next iteration. Search entry
+    // points reject the whole result if this aggregate budget is exhausted.
+    let _ = crate::control::charge("structure items", 1);
     StructureItem {
         kind: kind.to_string(),
         label: label.to_string(),
@@ -354,6 +375,9 @@ fn structure_item(kind: &str, label: &str, line_number: usize) -> StructureItem 
 fn finalize_ranges(text: &str, items: &mut [StructureItem]) {
     let total_lines = text.lines().count().max(1);
     for idx in 0..items.len() {
+        if crate::control::checkpoint().is_err() {
+            break;
+        }
         let end = if idx + 1 < items.len() {
             items[idx + 1]
                 .start_line
