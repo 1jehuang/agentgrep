@@ -301,7 +301,9 @@ fn deadline_interrupts_idle_child_and_reaps_it() {
     let dir = tempfile::tempdir().unwrap();
     let pid = dir.path().join("pid");
     let limits = SearchLimits {
-        timeout: Duration::from_secs(1),
+        // Include process startup on slower Windows CI runners without
+        // confusing a startup timeout with the idle-child deadline check.
+        timeout: Duration::from_secs(3),
         ..SearchLimits::default()
     };
     let error = run(
