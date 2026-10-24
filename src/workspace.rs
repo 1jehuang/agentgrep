@@ -1,6 +1,7 @@
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -90,6 +91,9 @@ pub fn collect_file_entries(scope: &SearchScope<'_>) -> Vec<FileEntry> {
     let mut files = Vec::new();
 
     for entry in builder.build() {
+        if crate::control::charge("entries", 1).is_err() {
+            break;
+        }
         let Ok(entry) = entry else {
             continue;
         };
@@ -132,11 +136,63 @@ pub fn collect_file_entries(scope: &SearchScope<'_>) -> Vec<FileEntry> {
 }
 
 pub fn read_text_file(path: &Path) -> Option<String> {
-    let Ok(bytes) = fs::read(path) else {
+    crate::control::checkpoint().ok()?;
+    let limits = crate::control::limits();
+    if !fs::metadata(path).ok()?.is_file() {
         return None;
-    };
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let mut file = options.open(path).ok()?;
+    // Do not read devices, FIFOs or sockets. The bounded chunk loop also
+    // handles files growing after metadata was checked.
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
+    if metadata.len() > limits.max_file_bytes as u64 {
+        crate::control::fail(format!(
+            "search resource limit exceeded: file bytes (limit {})",
+            limits.max_file_bytes
+        ));
+        return None;
+    }
+    let mut bytes = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        crate::control::checkpoint().ok()?;
+        let n = file.read(&mut chunk).ok()?;
+        if n == 0 {
+            break;
+        }
+        if n > limits.max_file_bytes.saturating_sub(bytes.len()) {
+            crate::control::fail(format!(
+                "search resource limit exceeded: file bytes (limit {})",
+                limits.max_file_bytes
+            ));
+            return None;
+        }
+        crate::control::charge("read bytes", n).ok()?;
+        bytes.extend_from_slice(&chunk[..n]);
+    }
     if bytes.contains(&0) {
         return None;
+    }
+    for (index, line) in bytes.split_inclusive(|b| *b == b'\n').enumerate() {
+        crate::control::checkpoint().ok()?;
+        let line = line.strip_suffix(b"\n").unwrap_or(line);
+        if line.len() > limits.max_line_bytes || index >= limits.max_file_lines {
+            crate::control::fail(format!(
+                "search resource limit exceeded: file lines or line bytes (limits {} lines, {} bytes/line)",
+                limits.max_file_lines, limits.max_line_bytes
+            ));
+            return None;
+        }
     }
 
     match String::from_utf8(bytes) {
@@ -149,6 +205,9 @@ pub fn collect_text_files(scope: &SearchScope<'_>) -> Vec<TextFile> {
     let mut files = Vec::new();
 
     for entry in collect_file_entries(scope) {
+        if crate::control::checkpoint().is_err() {
+            break;
+        }
         let Some(text) = read_text_file(&entry.path) else {
             continue;
         };

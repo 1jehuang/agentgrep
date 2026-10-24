@@ -1,5 +1,7 @@
+mod capture;
 pub mod cli;
 pub mod context;
+pub mod control;
 pub mod find;
 pub mod outline;
 pub mod render;
