@@ -148,3 +148,73 @@ fn scopes_restore_on_unwind_and_are_thread_local() {
     )
     .unwrap();
 }
+
+#[cfg(windows)]
+#[test]
+fn junction_traversal_is_bounded_and_no_follow_skips_external_tree() {
+    use std::process::{Command as ProcessCommand, Stdio};
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("needle_local.rs"),
+        "fn needle_local() {}\n",
+    )
+    .unwrap();
+    for index in 0..32 {
+        std::fs::write(
+            outside.path().join(format!("needle_{index}.rs")),
+            "fn needle() {}\n",
+        )
+        .unwrap();
+    }
+    let junction = root.path().join("linked");
+    // Directory junctions need no Developer Mode or symlink privilege.
+    let status = ProcessCommand::new("cmd")
+        .args(["/D", "/C", "mklink", "/J"])
+        .arg(&junction)
+        .arg(outside.path())
+        .stdout(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "mklink /J failed: {status}");
+
+    let cli = Cli::try_parse_from([
+        "agentgrep",
+        "find",
+        "needle",
+        "--no-ignore",
+        "--max-files",
+        "100",
+    ])
+    .unwrap();
+    let Command::Find(mut args) = cli.command else {
+        unreachable!()
+    };
+    let limits = SearchLimits {
+        max_entries: 8,
+        ..SearchLimits::default()
+    };
+    let followed = with_search_control(SearchControl::new(token(), limits.clone()), || {
+        agentgrep::find::run_find(root.path(), &args)
+    });
+    assert!(followed.unwrap_err().contains("entries"));
+
+    args.no_follow = true;
+    let local = with_search_control(SearchControl::new(token(), limits), || {
+        agentgrep::find::run_find(root.path(), &args)
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(local.files.len(), 1);
+    assert_eq!(local.files[0].path, "needle_local.rs");
+
+    args.no_follow = false;
+    let followed = agentgrep::find::run_find(root.path(), &args).unwrap();
+    assert_eq!(
+        followed.files.len(),
+        33,
+        "ordinary junction following regressed"
+    );
+    // Explicitly unlink the junction before TempDir cleanup, never its target.
+    std::fs::remove_dir(&junction).unwrap();
+}

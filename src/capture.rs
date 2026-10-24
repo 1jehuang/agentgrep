@@ -22,6 +22,56 @@ impl Drop for Reap {
     }
 }
 
+// A Windows anonymous pipe has no nonblocking Read mode. Peek before every
+// read, with exactly one reader per handle, so an inherited writer held by a
+// descendant cannot strand a reader thread during cancellation cleanup.
+struct PollingPipe<T>(T);
+
+#[cfg(windows)]
+impl<T: Read + std::os::windows::io::AsRawHandle> Read for PollingPipe<T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        use std::ptr::null_mut;
+        use windows_sys::Win32::Foundation::{ERROR_BROKEN_PIPE, ERROR_PIPE_NOT_CONNECTED};
+        use windows_sys::Win32::System::Pipes::PeekNamedPipe;
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let mut available = 0;
+        // SAFETY: the owned pipe remains live for this call, the output points
+        // to a valid u32, and null optional outputs request no copied data.
+        let ok = unsafe {
+            PeekNamedPipe(
+                self.0.as_raw_handle(),
+                null_mut(),
+                0,
+                null_mut(),
+                &mut available,
+                null_mut(),
+            )
+        };
+        if ok == 0 {
+            let error = io::Error::last_os_error();
+            return match error.raw_os_error().map(|code| code as u32) {
+                Some(ERROR_BROKEN_PIPE) | Some(ERROR_PIPE_NOT_CONNECTED) => Ok(0),
+                _ => Err(error),
+            };
+        }
+        if available == 0 {
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
+        // No other reader can consume these bytes between the peek and read.
+        let count = buf.len().min(available as usize);
+        self.0.read(&mut buf[..count])
+    }
+}
+
+#[cfg(not(windows))]
+impl<T: Read> Read for PollingPipe<T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
 #[cfg(unix)]
 fn nonblocking(pipe: &impl std::os::fd::AsRawFd) -> io::Result<()> {
     let fd = pipe.as_raw_fd();
@@ -77,8 +127,13 @@ pub(crate) fn output(command: &mut Command) -> io::Result<Output> {
             }
         })
     };
-    let out_reader = pump(Box::new(stdout), false, tx.clone(), stop.clone());
-    let err_reader = pump(Box::new(stderr), true, tx, stop.clone());
+    let out_reader = pump(
+        Box::new(PollingPipe(stdout)),
+        false,
+        tx.clone(),
+        stop.clone(),
+    );
+    let err_reader = pump(Box::new(PollingPipe(stderr)), true, tx, stop.clone());
     let limits = control::limits();
     let mut out = Vec::new();
     let mut err = Vec::new();
