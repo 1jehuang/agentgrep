@@ -67,6 +67,14 @@ impl SearchControl {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "control_baseline.rs"]
+mod baseline;
+#[cfg(test)]
+#[path = "control_tests.rs"]
+mod tests;
+
 thread_local! { static CONTROL: RefCell<Option<SearchControl>> = const { RefCell::new(None) }; }
 struct Restore(Option<SearchControl>);
 impl Drop for Restore {
@@ -85,11 +93,16 @@ pub fn with_search_control<T>(control: SearchControl, f: impl FnOnce() -> T) -> 
     checkpoint()?;
     Ok(result)
 }
+// Only internal leaf operations may run inside this borrow. In particular, never
+// invoke a user closure or install/restore a scope while it is alive.
+fn with_current<T>(f: impl FnOnce(Option<&SearchControl>) -> T) -> T {
+    CONTROL.with(|slot| f(slot.borrow().as_ref()))
+}
 pub(crate) fn current() -> Option<SearchControl> {
     CONTROL.with(|s| s.borrow().clone())
 }
 pub(crate) fn scoped<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    if current().is_some() {
+    if with_current(|control| control.is_some()) {
         checkpoint()?;
         let value = f();
         checkpoint()?;
@@ -108,46 +121,52 @@ pub(crate) fn inherited<T: Default>(control: Option<SearchControl>, f: impl FnOn
     }
 }
 pub(crate) fn limits() -> SearchLimits {
-    current().map(|c| c.limits).unwrap_or_default()
+    with_current(|control| control.map(|c| c.limits.clone()).unwrap_or_default())
 }
 pub(crate) fn fail(message: impl Into<String>) -> String {
     let message = message.into();
-    if let Some(c) = current() {
-        let mut usage = c.usage.lock().unwrap();
-        return usage.error.get_or_insert(message).clone();
-    }
-    message
+    with_current(|control| {
+        if let Some(c) = control {
+            let mut usage = c.usage.lock().unwrap();
+            return usage.error.get_or_insert(message).clone();
+        }
+        message
+    })
 }
 pub(crate) fn checkpoint() -> Result<(), String> {
-    if let Some(c) = current() {
-        if let Some(error) = c.usage.lock().unwrap().error.clone() {
-            return Err(error);
+    with_current(|control| {
+        if let Some(c) = control {
+            if let Some(error) = c.usage.lock().unwrap().error.clone() {
+                return Err(error);
+            }
+            if c.token.load(Ordering::Relaxed) {
+                return Err(fail("search cancelled"));
+            }
+            if c.started.elapsed() >= c.limits.timeout {
+                return Err(fail("search deadline exceeded"));
+            }
         }
-        if c.token.load(Ordering::Relaxed) {
-            return Err(fail("search cancelled"));
-        }
-        if c.started.elapsed() >= c.limits.timeout {
-            return Err(fail("search deadline exceeded"));
-        }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 pub(crate) fn charge(kind: &str, amount: usize) -> Result<(), String> {
     checkpoint()?;
-    if let Some(c) = current() {
-        let mut usage = c.usage.lock().unwrap();
-        let (counter, limit) = match kind {
-            "read bytes" => (&mut usage.read, c.limits.max_total_read_bytes),
-            "entries" => (&mut usage.entries, c.limits.max_entries),
-            "structure items" => (&mut usage.items, c.limits.max_structure_items),
-            _ => (&mut usage.matches, c.limits.max_matches),
-        };
-        *counter = counter.saturating_add(amount);
-        if *counter > limit {
-            let error = format!("search resource limit exceeded: {kind} (limit {limit})");
-            usage.error = Some(error.clone());
-            return Err(error);
+    with_current(|control| {
+        if let Some(c) = control {
+            let mut usage = c.usage.lock().unwrap();
+            let (counter, limit) = match kind {
+                "read bytes" => (&mut usage.read, c.limits.max_total_read_bytes),
+                "entries" => (&mut usage.entries, c.limits.max_entries),
+                "structure items" => (&mut usage.items, c.limits.max_structure_items),
+                _ => (&mut usage.matches, c.limits.max_matches),
+            };
+            *counter = counter.saturating_add(amount);
+            if *counter > limit {
+                let error = format!("search resource limit exceeded: {kind} (limit {limit})");
+                usage.error = Some(error.clone());
+                return Err(error);
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
