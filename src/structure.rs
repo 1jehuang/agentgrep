@@ -90,20 +90,21 @@ fn extract_rust(text: &str) -> Vec<StructureItem> {
         }
         let line_number = idx + 1;
         let trimmed = line.trim_start();
+        let visible = strip_rust_visibility(trimmed).trim_start();
 
-        if let Some(label) = parse_rust_keyword_item(trimmed, "fn") {
+        if let Some(label) = parse_rust_keyword_item(visible, "fn") {
             items.push(structure_item("function", label, line_number));
             continue;
         }
-        if let Some(label) = parse_rust_keyword_item(trimmed, "struct") {
+        if let Some(label) = parse_rust_keyword_item(visible, "struct") {
             items.push(structure_item("struct", label, line_number));
             continue;
         }
-        if let Some(label) = parse_rust_keyword_item(trimmed, "enum") {
+        if let Some(label) = parse_rust_keyword_item(visible, "enum") {
             items.push(structure_item("enum", label, line_number));
             continue;
         }
-        if let Some(label) = parse_rust_keyword_item(trimmed, "trait") {
+        if let Some(label) = parse_rust_keyword_item(visible, "trait") {
             items.push(structure_item("trait", label, line_number));
             continue;
         }
@@ -208,7 +209,8 @@ fn extract_generic(text: &str) -> Vec<StructureItem> {
 }
 
 fn parse_rust_keyword_item<'a>(line: &'a str, keyword: &str) -> Option<&'a str> {
-    let mut rest = strip_rust_visibility(line).trim_start();
+    // Visibility is stripped once by extract_rust, shared by all keyword probes.
+    let mut rest = line;
     if keyword == "fn" {
         rest = strip_keyword_prefix(rest, "async")
             .unwrap_or(rest)
@@ -390,6 +392,10 @@ fn finalize_ranges(text: &str, items: &mut [StructureItem]) {
         items[idx].line_count = end.saturating_sub(items[idx].start_line) + 1;
     }
 }
+
+#[cfg(test)]
+#[path = "structure_hoist_tests.rs"]
+mod hoist_tests;
 
 #[cfg(test)]
 mod tests {
